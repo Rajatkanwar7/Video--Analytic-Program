@@ -21,6 +21,11 @@ class Config:
     image_size: int = 960
     person_confidence: float = 0.45
     bird_confidence: float = 0.20
+    thrown_object_confidence: float = 0.35
+    require_object_class: bool = False
+    show_trajectories: bool = True
+    trajectory_seconds: float = 2.0
+    test_mode: bool = False
     semantic_interval_seconds: float = 0.5
     inside_zone: list = field(default_factory=list)
     outside_zone: list = field(default_factory=list)
@@ -65,6 +70,7 @@ class Config:
         bounds = {
             "image_size": (320, 1920), "person_confidence": (0.05, 1),
             "bird_confidence": (0.05, 1), "semantic_interval_seconds": (0.05, 5),
+            "thrown_object_confidence": (0.05, 1), "trajectory_seconds": (0.1, 10),
             "processing_width": (320, 3840), "warmup_seconds": (0.1, 60),
             "background_threshold": (4, 100), "min_blob_area_ratio": (0.000001, 0.1),
             "max_blob_area_ratio": (0.000002, 0.2), "max_foreground_ratio": (0.01, 0.9),
@@ -86,8 +92,9 @@ class Config:
                 raise ValueError(f"{name} must be between {low} and {high}.")
             if name in integer_fields and not isinstance(v, int):
                 raise ValueError(f"{name} must be a whole number.")
-        if not isinstance(self.beep, bool):
-            raise ValueError("beep must be true or false.")
+        for name in ("beep", "require_object_class", "show_trajectories", "test_mode"):
+            if not isinstance(getattr(self, name), bool):
+                raise ValueError(f"{name} must be true or false.")
         if self.min_blob_area_ratio >= self.max_blob_area_ratio:
             raise ValueError("Minimum object area must be smaller than maximum area.")
         if self.max_track_gap_seconds > self.reset_gap_seconds:

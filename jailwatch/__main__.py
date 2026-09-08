@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib.metadata
 import json
+import math
 import signal
 import sys
 import threading
@@ -19,6 +20,8 @@ def main(argv=None):
     run.add_argument("--config", default="local/camera.json")
     run.add_argument("--max-frames", type=int, default=0)
     run.add_argument("--realtime", action="store_true", help="Pace file replay to original timing")
+    run.add_argument("--duration",type=float,default=0,help="Stop after this many wall-clock seconds; zero runs until stopped")
+    run.add_argument("--test-mode",action="store_true",help="Mark detection evidence as a live test")
     commands.add_parser("doctor", help="Check installed dependencies without opening a camera")
     download = commands.add_parser("download-model", help="Download official YOLO11 detection weights")
     download.add_argument("--name", choices=["yolo11n.pt", "yolo11s.pt"], default="yolo11n.pt")
@@ -90,7 +93,10 @@ def main(argv=None):
             from .pipeline import run_monitor
             if args.max_frames < 0:
                 raise ValueError("max-frames must be zero (all frames) or positive.")
+            if not math.isfinite(args.duration) or args.duration < 0:
+                raise ValueError("duration must be finite and nonnegative.")
             config = load_config(args.config)
+            config.test_mode = config.test_mode or args.test_mode
             stop = threading.Event()
             signal.signal(signal.SIGINT, lambda *_: stop.set())
             if hasattr(signal, "SIGTERM"):
@@ -111,7 +117,7 @@ def main(argv=None):
                     last_status[0] = message["text"]
                 print(json.dumps(message), flush=True)
             summary = run_monitor(config, EventStore(config.data_dir), stop, callback,
-                                  max_frames=args.max_frames, realtime=args.realtime)
+                                  max_frames=args.max_frames, realtime=args.realtime,max_seconds=args.duration)
             print(json.dumps({"type": "summary", **summary}), flush=True)
         return 0
     except KeyboardInterrupt:

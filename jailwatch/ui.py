@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import copy
+import json
 import queue
+import sqlite3
 import threading
 import time
+import uuid
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
@@ -115,6 +118,7 @@ class App(tk.Tk):
         self.last_bell = 0
         self.last_history_refresh = 0
         self.history_rows = {}
+        self.last_summary = None
         self._style()
         self._build()
         self.refresh_history()
@@ -163,6 +167,21 @@ class App(tk.Tk):
         self.stop_button.pack(side="left", padx=8)
         self.camera_label = ttk.Label(bar, text=self.settings.camera_name, font=("Segoe UI", 12, "bold"))
         self.camera_label.pack(side="right")
+        controls = ttk.Frame(self.monitor_tab); controls.pack(fill="x",pady=(0,8))
+        self.show_trails = tk.BooleanVar(value=self.settings.show_trajectories)
+        self.test_mode = tk.BooleanVar(value=self.settings.test_mode)
+        self.require_class = tk.BooleanVar(value=self.settings.require_object_class)
+        self.option_buttons = []
+        for label,variable in [("Show trajectories",self.show_trails),("Live test mode",self.test_mode),
+                               ("Require trained object class",self.require_class)]:
+            button = ttk.Checkbutton(controls,text=label,variable=variable)
+            button.pack(side="left",padx=(0,16)); self.option_buttons.append(button)
+        ttk.Button(controls,text="Test alarm",command=self.test_alarm).pack(side="right")
+        session_bar = ttk.Frame(self.monitor_tab); session_bar.pack(fill="x",pady=(0,8))
+        self.session_var = tk.StringVar(value="Test alarm checks the screen and sound only. Draw zones before testing detection.")
+        ttk.Label(session_bar,textvariable=self.session_var,style="Muted.TLabel",wraplength=790).pack(side="left")
+        self.report_button = ttk.Button(session_bar,text="Export session report",command=self.export_session,state="disabled")
+        self.report_button.pack(side="right")
         self.status_var = tk.StringVar(value="Ready. Configure the camera and draw zones before starting.")
         ttk.Label(self.monitor_tab, textvariable=self.status_var, wraplength=1100).pack(fill="x", pady=(0, 10))
         self.video = tk.Canvas(self.monitor_tab, background="#080f1b", highlightthickness=0)
@@ -248,12 +267,19 @@ class App(tk.Tk):
         self.table.configure(yscrollcommand=scroll.set)
         self.table.pack(side="left", fill="both", expand=True); scroll.pack(side="right", fill="y")
         self.table.bind("<Double-1>", lambda event: self.open_snapshot())
+        trajectory_bar = ttk.Frame(self.history_tab); trajectory_bar.pack(fill="x",pady=(10,0))
+        ttk.Button(trajectory_bar,text="Export selected trajectories",command=self.export_trajectory).pack(side="left")
+        ttk.Label(trajectory_bar,text="Measured positions and times; no predicted landing point.",
+                  style="Muted.TLabel").pack(side="left",padx=12)
         ttk.Label(self.history_tab, text="Shows the latest 300 records. CSV includes all retained records. "
                   "Acknowledgment records operator review and does not delete evidence.", wraplength=1080,
                   style="Muted.TLabel").pack(anchor="w", pady=12)
 
     def read_form(self):
         c = copy.deepcopy(self.settings)
+        c.show_trajectories = self.show_trails.get()
+        c.test_mode = self.test_mode.get()
+        c.require_object_class = self.require_class.get()
         for key, var in self.vars.items():
             old = getattr(c, key)
             try:
@@ -297,6 +323,8 @@ class App(tk.Tk):
     def set_busy(self, busy):
         self.busy = busy
         for button in (self.start_button, self.zone_button, self.save_button, self.model_button):
+            button.configure(state="disabled" if busy else "normal")
+        for button in self.option_buttons:
             button.configure(state="disabled" if busy else "normal")
 
     def calibrate(self):
@@ -360,6 +388,9 @@ class App(tk.Tk):
             self.tabs.select(self.setup_tab); return
         self.set_busy(True)
         self.stop_button.configure(state="normal")
+        self.last_summary = None
+        self.report_button.configure(state="disabled")
+        self.session_var.set("Starting monitoring session…")
         self.stop_event.clear()
         config = copy.deepcopy(self.settings)
         store = self.store
@@ -390,6 +421,10 @@ class App(tk.Tk):
                     self.refresh_history()
                     if self.settings.beep and time.monotonic() - self.last_bell > 1:
                         self.bell(); self.last_bell = time.monotonic()
+                elif kind == "session":
+                    mode = "LIVE TEST" if m["test_mode"] else "MONITORING"
+                    source = "RTSP camera" if m["live"] else "recorded video"
+                    self.session_var.set(f"{mode} | {source} | Session {m['run_id']}")
                 elif kind == "status":
                     self.status_var.set(m["text"])
                 elif kind == "calibration":
@@ -403,6 +438,9 @@ class App(tk.Tk):
                     self.set_busy(False); self.stop_button.configure(state="disabled")
                     self.status_var.set(f"Stopped. Processed {m['summary']['processed_frames']} frames.")
                     self.refresh_history()
+                    self.last_summary = m["summary"]
+                    self.report_button.configure(state="normal")
+                    self.session_var.set("Session stopped. Export its report to review alerts, frame loss and AI overload.")
                 elif kind == "error":
                     self.set_busy(False); self.stop_button.configure(state="disabled")
                     self.status_var.set("MONITORING STOPPED — " + m["text"])
@@ -421,7 +459,10 @@ class App(tk.Tk):
                 self.status_var.set(frame["text"])
             self.stats_var.set(f"Processed FPS {frame['fps']:.1f}   |   Frame loss {frame['dropped']}   |   "
                 f"Birds filtered {frame['suppressed_birds']}   |   Processing delay {frame['latency']:.2f}s   |   "
-                f"AI pending {frame.get('ai_pending', 0)}   |   Video time {frame['source_time']:.1f}s")
+                f"AI pending {frame.get('ai_pending', 0)}   |   Source time {frame['source_time']:.1f}s\n"
+                f"Throw alerts {frame.get('event_counts',{}).get('suspected_throw',0)}   |   "
+                f"Person alerts {frame.get('event_counts',{}).get('person_movement',0)}   |   "
+                f"AI queue overflows {frame.get('ai_overflows',0)}   |   Unclassified filtered {frame.get('suppressed_unknown',0)}")
         if time.monotonic() - self.last_history_refresh > 3:
             self.refresh_history()
         self.poll_after_id = self.after(80, self.poll)
@@ -463,6 +504,8 @@ class App(tk.Tk):
         if not ids:
             return
         r = self.history_rows[ids[0]]
+        details = json.loads(r["details"])
+        stats = details.get("trajectory_statistics",{})
         try:
             path = self.store.snapshot_path(r["snapshot"])
             img = Image.open(path)
@@ -473,7 +516,48 @@ class App(tk.Tk):
         photo = ImageTk.PhotoImage(img)
         label = ttk.Label(win, image=photo); label.image = photo; label.pack(padx=12, pady=12)
         ttk.Label(win, text=f"{r['message']}\nCamera: {r['camera']} | Video time: {r['source_time']:.2f}s\n"
+                  f"Track: {details.get('track_id','—')} | Path samples: {stats.get('sample_count',0)} | "
+                  f"Path duration: {stats.get('duration_seconds',0):.2f}s\n"
+                  f"Classification: {details.get('classification','unknown')} | Test mode: {details.get('test_mode',False)}\n"
                   f"Review note: {r['note'] or '—'}", padding=12, wraplength=1050).pack(anchor="w")
+
+    def test_alarm(self):
+        from .rules import Candidate
+        try:
+            self.store.add(Candidate("system_test",0.0,0,(0,0,0,0),[],
+                           "Operator test of the alarm display and sound; no object was detected."),
+                           self.settings.camera_name,uuid.uuid4().hex,details={"test_only":True,"test_mode":True})
+            self.refresh_history()
+            if self.settings.beep:
+                self.bell()
+            self.session_var.set("TEST ALARM created. This checks the display, sound and history; it does not test AI detection.")
+        except (OSError, sqlite3.Error):
+            messagebox.showerror("Test alarm","Cannot save the test alarm. Check the data folder.",parent=self)
+
+    def export_trajectory(self):
+        ids = self.table.selection()
+        if not ids:
+            messagebox.showinfo("Trajectory","Select one or more detected events first.",parent=self)
+            return
+        path = filedialog.asksaveasfilename(defaultextension=".csv",initialfile="object_trajectories.csv",
+                                          filetypes=[("CSV","*.csv")])
+        if path:
+            try:
+                count = self.store.export_trajectories(path,ids)
+                messagebox.showinfo("Trajectory",f"Exported {count} measured positions.",parent=self)
+            except (ValueError,OSError) as exc:
+                messagebox.showerror("Trajectory",str(exc),parent=self)
+
+    def export_session(self):
+        if self.last_summary is None:
+            return
+        path = filedialog.asksaveasfilename(defaultextension=".json",initialfile="session_report.json",
+                                          filetypes=[("JSON report","*.json")])
+        if path:
+            try:
+                Path(path).write_text(json.dumps(self.last_summary,indent=2)+"\n",encoding="utf-8")
+            except OSError:
+                messagebox.showerror("Session report","Cannot write the selected file.",parent=self)
 
     def export(self):
         path = filedialog.asksaveasfilename(defaultextension=".csv", initialfile="jailwatch_alerts.csv",

@@ -8,6 +8,16 @@ spec.loader.exec_module(evaluation)
 
 
 class EvaluationTests(unittest.TestCase):
+    def test_false_alarms_per_hour_use_reviewed_duration(self):
+        result=evaluation.evaluate([1,5,8],[(0,2)],duration_seconds=600)
+        self.assertEqual(result["false_alarms_per_hour"],12)
+        self.assertEqual(result["f1"],.5)
+        with self.assertRaises(ValueError): evaluation.evaluate([700],[],600)
+
+    def test_long_runs_do_not_recurse_and_invalid_alerts_are_rejected(self):
+        self.assertEqual(evaluation.evaluate([1]*2000,[(0,2)]*2000)["true_positives"],2000)
+        with self.assertRaises(ValueError): evaluation.evaluate([float('nan')],[])
+
     def test_overlapping_intervals_match_once(self):
         result = evaluation.evaluate([1.5, 2.5], [(1, 3), (1, 2)])
         self.assertEqual(result["true_positives"], 2)

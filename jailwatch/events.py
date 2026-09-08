@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import sqlite3
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+from .trajectory import trajectory_stats
 
 
 def utc_now():
@@ -47,6 +50,7 @@ class EventStore:
         extra = dict(details or {})
         extra["trajectory"] = candidate.trajectory
         extra["box"] = list(candidate.box)
+        extra["track_id"] = candidate.track_id
         if image is not None:
             import cv2
             destination = self.snapshots / f"{event_id}.jpg"
@@ -105,3 +109,42 @@ class EventStore:
             writer.writerow(columns)
             for row in db.execute("SELECT * FROM events ORDER BY created_utc,rowid"):
                 writer.writerow([safe(row[c]) for c in columns])
+
+    def export_trajectories(self, path, ids):
+        """Export selected saved paths; old events without image size retain normalized coordinates."""
+        if not ids:
+            raise ValueError("Select at least one event with a trajectory.")
+        selected = set(ids)
+        output = []
+        with self.connect() as db:
+            for row in db.execute("SELECT * FROM events ORDER BY created_utc,rowid"):
+                if row["id"] not in selected:
+                    continue
+                details = json.loads(row["details"])
+                points = details.get("trajectory", [])
+                trajectory_stats(points)
+                size = details.get("image_size")
+                for t,x,y in points:
+                    output.append([row["id"],row["run_id"],row["kind"],details.get("track_id", ""),
+                                   t,x,y,x*size[0] if size else "",y*size[1] if size else "",
+                                   size[0] if size else "",size[1] if size else ""])
+        if not output:
+            raise ValueError("The selected events contain no measured trajectory. A test alarm has no object path.")
+        with Path(path).open("w",newline="",encoding="utf-8-sig") as out:
+            writer = csv.writer(out)
+            writer.writerow(["event_id","run_id","kind","track_id","source_time_seconds",
+                             "x_normalized","y_normalized","x_pixels","y_pixels","image_width","image_height"])
+            writer.writerows(output)
+        return len(output)
+
+    def save_run(self, summary):
+        run_id = summary.get("run_id", "")
+        if not re.fullmatch(r"[a-f0-9]{32}",run_id):
+            raise ValueError("Invalid run identifier.")
+        directory = self.directory / "runs"
+        directory.mkdir(exist_ok=True)
+        path = directory / f"{run_id}.json"
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(summary,indent=2,allow_nan=False)+"\n",encoding="utf-8")
+        temporary.replace(path)
+        return str(path)

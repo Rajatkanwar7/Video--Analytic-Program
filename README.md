@@ -1,4 +1,4 @@
-# JailWatch — CCTV perimeter monitor
+# JailWatch 1.1 — CCTV perimeter monitor
 
 A local desktop application for an RTSP IP camera or recorded video. It alerts on moving people in a configured inside zone and on small moving objects crossing from outside to inside. Recognized birds are filtered from crossing alerts.
 
@@ -17,6 +17,9 @@ The program runs on the **CCTV/server computer**. The camera supplies its RTSP s
 ## Features
 
 - Desktop live view, persistent on-screen alarm banner, optional system bell.
+- Live measured object/person trails with track IDs and direction arrows; saved path statistics and trajectory CSV export.
+- Live-test evidence labels, a separate operator test-alarm button, and saved session/throughput reports.
+- Optional custom `thrown_object` classification with an independent confidence threshold and a strict classification gate.
 - RTSP timeouts, automatic reconnect, visible connection and performance status.
 - Separate live AI worker, bounded review queue and visible overload warnings.
 - MP4/TS/AVI/MKV replay using video timestamps; headless batch processing.
@@ -26,6 +29,7 @@ The program runs on the **CCTV/server computer**. The camera supplies its RTSP s
 - Local SQLite history, annotated snapshots, review notes, acknowledgments and CSV export.
 - Retention limits, local configuration, command-line diagnostics, automated logic/video tests and GitHub Actions configuration.
 - Optional custom-model training and event-evaluation scripts.
+- Frame extraction for human annotation, dataset/label checks, recording-group leakage checks, and held-out model evaluation.
 
 One source is monitored per application process. Use separate configuration files and processes for multiple cameras. This is a standalone application; it is not an i2V/VMS plug-in.
 
@@ -54,10 +58,13 @@ The repository contains source and example settings. Camera credentials, recordi
 ## Further setup
 
 - [Installation, RTSP setup and troubleshooting](docs/INSTALLATION.md)
+- [Live testing, trajectory display and session reports](docs/LIVE_TESTING.md)
 - [GitHub download and update instructions](docs/GITHUB.md)
 - [Configuration and threshold tuning](docs/CONFIGURATION.md)
 - [What was tested and camera validation](docs/VALIDATION.md)
 - [Custom model training](docs/TRAINING.md)
+
+Version 1.1 adds software features and training tools. No new jail-specific model weights or measured improvement in field accuracy are included. The live paths show observations in the image, not predicted landing points or physical speed.
 
 ## Dependencies
 

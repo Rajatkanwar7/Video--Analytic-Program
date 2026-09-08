@@ -5,7 +5,7 @@ import queue
 import threading
 from collections import deque
 
-from .detector import verify_candidate
+from .detector import verify_track
 
 
 class LiveInference:
@@ -82,13 +82,7 @@ class LiveInference:
                 if job["type"] == "semantic":
                     job["detections"] = detector.predict(job["image"])
                 else:
-                    label = verify_candidate(detector, job["image"], job["candidate"].box)
-                    if label is None:
-                        for _, crop, box in job["samples"]:
-                            label = verify_candidate(detector, crop, box)
-                            if label:
-                                break
-                    job["label"] = label
+                    job["label"] = verify_track(detector, job["image"], job["candidate"].box, job["samples"])
                     job.pop("samples")
                 if not self.stopping:
                     try:

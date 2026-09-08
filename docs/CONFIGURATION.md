@@ -51,3 +51,17 @@ Bird boxes from old frames are not applied to new frames. Crossing verification 
 `data_dir` defaults to `data`, holding SQLite records and annotated JPEG snapshots. Retention defaults to 14 days or 5,000 events; pruning during monitoring removes older records and their snapshots. Acknowledged events follow the same retention policy. Archive evidence separately when needed. Original video/event clips are not recorded by JailWatch; use the NVR/VMS for original footage.
 
 Paths are relative to the working directory; the supplied launchers start in the project folder. `source_env`, when set, takes precedence over `source`.
+
+## Version 1.1 additions
+
+Existing version-1 camera files remain valid; the new fields use defaults when absent.
+
+| Field | Default | Purpose |
+| --- | --- | --- |
+| `show_trajectories` | `true` | Draw measured object/person tracks on live and replay views. |
+| `trajectory_seconds` | `2.0` | Maximum time history drawn, within the bounded tracker history. |
+| `test_mode` | `false` | Mark real detection evidence as a live test. |
+| `thrown_object_confidence` | `0.35` | Custom-model object threshold, separate from person/bird confidence. |
+| `require_object_class` | `false` | Require a custom `thrown_object` match before emitting a crossing alert; still suppress recognized birds/people. |
+
+Stop monitoring before changing the on-screen options. Generic weights do not support the strict class requirement. See [live testing](LIVE_TESTING.md) and [training](TRAINING.md).

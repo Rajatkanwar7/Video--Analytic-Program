@@ -19,11 +19,15 @@ class DesktopTests(unittest.TestCase):
             app = App(path)
             try:
                 app.update()
-                self.assertEqual(app.title(), "JailWatch 1.0.0 | CCTV monitor")
+                self.assertEqual(app.title(), "JailWatch 1.1.0 | CCTV monitor")
                 self.assertEqual(len(app.tabs.tabs()), 3)
                 self.assertTrue(app.save())
                 app.tabs.select(app.setup_tab)
                 app.update()
+                app.test_alarm()
+                rows = app.store.list()
+                self.assertEqual(rows[0]["kind"],"system_test")
+                self.assertIn('"test_only": true',rows[0]["details"])
             finally:
                 app.close_app()
 

@@ -1,8 +1,20 @@
 # Validation record and camera acceptance
 
-This separates implemented behavior from measured detection accuracy. Tests were run in a Linux environment with Python 3.12.13, NumPy 2.3.5, OpenCV headless 4.13.0.92 and Pillow 12.3.0. AI smoke processing used PyTorch 2.6.0 CPU, torchvision 0.21.0 CPU and Ultralytics 8.3.228 with official YOLO11n weights. Installation requirements include desktop OpenCV and Pillow 12.1.0; a fresh Windows installation has not been run locally.
+This separates implemented behavior from measured detection accuracy. No camera-specific detection rate or newly trained model is claimed for version 1.1.
 
-## Automated software tests
+## Version 1.1 validation
+
+The [GitHub Actions workflow](https://github.com/Rajatkanwar7/Video--Analytic-Program/actions/workflows/tests.yml) checks Python 3.11 and 3.12 on Windows and Linux. Inspect the result for the commit you download. It installs the base dependencies and runs synthetic video, tracking, evidence, data-checking, evaluation, Windows launcher and display-dependent desktop tests. Linux runners without a display skip the desktop tests; Windows runs them. These checks do not install GPU drivers, download model weights, or connect to a physical camera.
+
+New coverage includes measured trajectory rendering and its toggle, expired paths, coordinate exports, the strict custom-object gate, bird evidence overriding a custom-object match, persisted session reports, an operator-only test alarm, frame extraction timing, reviewed negative labels, class/box validation, duplicate/group leakage and false alarms per hour. Training-command tests use a controlled model stub to verify arguments and output reports; they do not train a neural network.
+
+The current development environment ran the dependency-light tests and syntax checks. Its OpenCV runtime was unavailable, so current video and Windows checks are delegated to the workflow above. No new RTSP field test, real-video AI benchmark, GPU training, desktop visual inspection or detector-accuracy measurement was completed for this update.
+
+## Earlier prototype record
+
+The following smoke checks were performed on the original prototype, before version 1.1. They used Linux with Python 3.12.13, NumPy 2.3.5, OpenCV headless 4.13.0.92 and Pillow 12.3.0. AI smoke processing used PyTorch 2.6.0 CPU, torchvision 0.21.0 CPU and Ultralytics 8.3.228 with official YOLO11n weights. Installation requirements include desktop OpenCV and Pillow 12.1.0; a fresh end-user Windows installation was not run locally.
+
+### Original automated software tests
 
 `python -m unittest discover -s tests -v` completed with **31 passing tests and 2 skipped desktop tests** in the local environment.
 
@@ -51,7 +63,7 @@ Export Alarm history to CSV and select one completed replay's `run_id`. Create a
 python scripts/evaluate_events.py --events local/alerts.csv --labels local/throw_intervals.csv --run-id RUN_ID
 ```
 
-The script performs one-to-one matching and reports true positives, false positives, false negatives, precision and recall. A repeated alert does not count as another successful detection. If a confirmed complete replay emitted no alerts, add `--allow-empty-run`; check the run ID carefully. This command does not establish bird-specific performance unless the evaluated videos are separately annotated as bird negatives.
+The script performs one-to-one matching and reports true positives, false positives, false negatives, precision, recall and F1. Add `--duration-seconds` with the fully reviewed video duration to calculate false alarms per hour, and `--output local/evaluation.json` to save the result. A repeated alert does not count as another successful detection. If a confirmed complete replay emitted no alerts, add `--allow-empty-run`; check the run ID carefully. This command does not establish bird-specific performance unless the evaluated videos are separately annotated as bird negatives.
 
 ## Reproduce the checks
 

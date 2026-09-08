@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import time
 import uuid
-from collections import deque
+from collections import Counter, deque
 
 import cv2
 import numpy as np
 
 from .capture import VideoSource
-from .detector import YoloDetector, verify_candidate
+from .detector import YoloDetector, verify_track
 from .geometry import contains
 from .rules import RuleEngine
+from .trajectory import draw_trail, trajectory_stats, visible_trails
+from .events import utc_now
 
 
 class MotionExtractor:
@@ -62,6 +64,10 @@ class Pipeline:
         self.status = "Warming up"
         self.suppressed_birds = 0
         self.suppressed_people = 0
+        self.suppressed_unknown = 0
+        self.track_labels = {}
+        self.event_counts = Counter()
+        self.observed_seconds = 0.0
         self.frame_gaps = 0
         # Keep contextual crops, not full-resolution video, for exact-time verification.
         self.samples = {}
@@ -80,6 +86,7 @@ class Pipeline:
         self.last_semantic = -1e20
         self.last_submit = -1e20
         self.detections = []
+        self.track_labels.clear()
 
     def process(self, packet):
         c = self.config
@@ -92,6 +99,9 @@ class Pipeline:
         scale = min(1, c.processing_width / rw)
         image = cv2.resize(raw, (round(rw * scale), round(rh * scale))) if scale < 1 else raw
         t = packet.time
+        if (self.last_time is not None and packet.epoch == self.last_epoch and
+                0 < t-self.last_time <= c.reset_gap_seconds):
+            self.observed_seconds += t-self.last_time
         if (self.first_time is None or packet.epoch != self.last_epoch or self.last_time is None or
                 t <= self.last_time or t - self.last_time > c.reset_gap_seconds):
             if self.first_time is not None:
@@ -108,9 +118,7 @@ class Pipeline:
             self.status = "Warming up background"
         elif ratio > c.max_foreground_ratio:
             self.status = "Large scene change: crossing detection paused"
-            self.rules.motion.reset()
-            self.samples.clear()
-            self.first_time = t
+            self.reset(t)
         else:
             candidates = self.rules.crossing(boxes, t)
             self._sample_tracks(image, t)
@@ -129,12 +137,7 @@ class Pipeline:
             if self.live_ai:
                 self.live_ai.submit_candidate(self.generation, candidate, image, samples)
                 continue
-            label = verify_candidate(self.detector, image, candidate.box)
-            if label is None:
-                for _, crop, crop_box in samples:
-                    label = verify_candidate(self.detector, crop, crop_box)
-                    if label:
-                        break
+            label = verify_track(self.detector, image, candidate.box, samples)
             event = self._candidate_result(candidate, image, label)
             if event:
                 events.append(event)
@@ -158,13 +161,17 @@ class Pipeline:
         return events
 
     def _candidate_result(self, candidate, image, label):
+        self.track_labels[candidate.track_id] = label or "motion"
         if label == "bird":
             self.suppressed_birds += 1
         elif label == "person":
             self.suppressed_people += 1
+        elif self.config.require_object_class and label != "thrown_object":
+            self.suppressed_unknown += 1
         else:
             return self._emit(candidate, image, {
-                "classification": "unknown moving object", "bird_filter": "no bird recognized",
+                "classification": "thrown_object" if label == "thrown_object" else "unknown moving object",
+                "custom_object_match": label == "thrown_object", "bird_filter": "no bird recognized",
                 "review_required": True})
         return None
 
@@ -185,6 +192,7 @@ class Pipeline:
     def _sample_tracks(self, image, timestamp):
         h, w = image.shape[:2]
         active = self.rules.motion.tracks
+        self.track_labels = {key: value for key,value in self.track_labels.items() if key in active}
         self.samples = {key: value for key, value in self.samples.items() if key in active}
         for key, track in active.items():
             if track.history[-1].time != timestamp or track.outside_start is None:
@@ -206,10 +214,16 @@ class Pipeline:
             return None
         evidence = image.copy()
         self._draw_candidate(evidence, candidate)
+        details = {**details, "test_mode": self.config.test_mode,
+                   "image_size": [image.shape[1],image.shape[0]],
+                   "trajectory_statistics": trajectory_stats(candidate.trajectory,[image.shape[1],image.shape[0]])}
+        if self.config.test_mode:
+            cv2.putText(evidence,"LIVE TEST",(12,58),cv2.FONT_HERSHEY_SIMPLEX,.65,(255,180,80),2)
         event_id = self.store.add(candidate, self.config.camera_name, self.run_id, evidence, details)
         self.rules.emitted(candidate.kind, candidate.source_time)
+        self.event_counts[candidate.kind] += 1
         return {"id": event_id, "kind": candidate.kind, "source_time": candidate.source_time,
-                "message": candidate.message}
+                "message": candidate.message, "run_id": self.run_id, "test_mode": self.config.test_mode}
 
     def _prune(self, t):
         now = time.monotonic()
@@ -224,7 +238,7 @@ class Pipeline:
         cv2.rectangle(image, (int(x1*w), int(y1*h)), (int(x2*w), int(y2*h)), (20, 40, 255), 2)
         points = np.array([(int(x*w), int(y*h)) for _, x, y in candidate.trajectory], np.int32)
         if len(points) >= 2:
-            cv2.polylines(image, [points], False, (20, 190, 255), 2)
+            draw_trail(image,candidate.trajectory,(20,190,255),f"Track #{candidate.track_id}",candidate.box)
         cv2.putText(image, candidate.kind.upper(), (12, 30), cv2.FONT_HERSHEY_SIMPLEX, .7, (20, 40, 255), 2)
 
     def annotate(self, image, timestamp, events):
@@ -234,6 +248,17 @@ class Pipeline:
             points = np.array([(int(x*w), int(y*h)) for x, y in zone], np.int32)
             cv2.polylines(image, [points], True, color, 2)
             cv2.putText(image, name, tuple(points[0]), cv2.FONT_HERSHEY_SIMPLEX, .6, color, 2)
+        if self.config.show_trajectories:
+            for tid,points,box in visible_trails(self.rules.motion.tracks,timestamp,
+                    self.config.trajectory_seconds,self.config.max_track_gap_seconds,corridor_only=True):
+                label = self.track_labels.get(tid,"motion")
+                color = (220,180,60) if label == "bird" else (30,180,255)
+                draw_trail(image,points,color,f"{label.replace('_',' ')} #{tid}",box)
+            for tid,points,box in visible_trails(self.rules.people.tracks,timestamp,
+                    self.config.trajectory_seconds,max(1.5,3*self.config.semantic_interval_seconds)):
+                draw_trail(image,points,(80,220,80),f"person #{tid}",box)
+        if self.config.test_mode:
+            cv2.putText(image,"LIVE TEST MODE",(12,25),cv2.FONT_HERSHEY_SIMPLEX,.6,(255,180,80),2)
         if timestamp - self.last_semantic < 0.15:
             for d in self.detections:
                 x1, y1, x2, y2 = d.box
@@ -248,7 +273,8 @@ class Pipeline:
         return image
 
 
-def run_monitor(config, store, stop_event, callback, max_frames=0, realtime=False, detector_factory=YoloDetector):
+def run_monitor(config, store, stop_event, callback, max_frames=0, realtime=False, detector_factory=YoloDetector,
+                max_seconds=0):
     """Shared desktop/headless runner. callback runs on processing thread; UI must queue it."""
     config.validate()
     source = config.resolved_source()
@@ -269,33 +295,48 @@ def run_monitor(config, store, stop_event, callback, max_frames=0, realtime=Fals
     else:
         detector = detector_factory(config)
     pipeline = Pipeline(config, detector, store, live_ai=live_ai)
-    reader.open()
     started = time.monotonic()
+    started_utc = utc_now()
+    run_status = "stopped"
+    max_latency = 0.0
     last_report = 0.0
     first_source_time = None
     try:
+        reader.open()
+        callback({"type": "session", "run_id": pipeline.run_id, "live": reader.live,
+                  "test_mode": config.test_mode})
         while not stop_event.is_set():
+            if max_seconds and time.monotonic()-started >= max_seconds:
+                run_status = "duration_limit"
+                break
             packet = reader.read()
             if packet is None:
                 for event in pipeline._drain_ai():
                     callback({"type": "event", **event})
                 callback({"type": "status", "text": reader.status})
                 if reader.ended:
+                    run_status = "source_ended"
                     break
                 continue
             if first_source_time is None:
                 first_source_time = packet.time
             if not reader.live and realtime:
                 wait = packet.time - first_source_time - (time.monotonic() - started)
+                if max_seconds:
+                    wait = min(wait,max(0,max_seconds-(time.monotonic()-started)))
                 if wait > 0 and stop_event.wait(wait):
+                    break
+                if max_seconds and time.monotonic()-started >= max_seconds:
+                    run_status = "duration_limit"
                     break
             packet.time -= first_source_time
             annotated, events = pipeline.process(packet)
             for event in events:
                 callback({"type": "event", **event})
             now = time.monotonic()
+            latency = now - packet.received
+            max_latency = max(max_latency,latency)
             if now - last_report >= .08 or events:
-                latency = now - packet.received
                 status = pipeline.status
                 if reader.live and (latency > .5 or reader.dropped):
                     status += " | Frame loss/latency: small objects may be missed"
@@ -305,16 +346,32 @@ def run_monitor(config, store, stop_event, callback, max_frames=0, realtime=Fals
                     "latency": latency, "suppressed_birds": pipeline.suppressed_birds,
                     "ai_pending": live_ai.pending if live_ai else 0,
                     "ai_overflows": live_ai.dropped_candidates if live_ai else 0,
-                    "frame_gaps": pipeline.frame_gaps})
+                    "frame_gaps": pipeline.frame_gaps,
+                    "run_id": pipeline.run_id, "source_fps": reader.fps,
+                    "test_mode": config.test_mode, "event_counts": dict(pipeline.event_counts),
+                    "suppressed_unknown": pipeline.suppressed_unknown})
                 last_report = now
             if max_frames and pipeline.processed >= max_frames:
+                run_status = "frame_limit"
                 break
+    except Exception:
+        run_status = "failed"
+        raise
     finally:
+        pending = live_ai.pending if live_ai else 0
         reader.close()
         if live_ai:
             live_ai.close()
-    return {"processed_frames": pipeline.processed, "dropped_frames": reader.dropped,
-            "suppressed_birds": pipeline.suppressed_birds, "suppressed_people": pipeline.suppressed_people,
-            "frame_gaps": pipeline.frame_gaps, "run_id": pipeline.run_id,
-            "ai_overflows": live_ai.dropped_candidates if live_ai else 0,
-            "elapsed_seconds": round(time.monotonic() - started, 3)}
+        summary = {"processed_frames": pipeline.processed, "dropped_frames": reader.dropped,
+                   "suppressed_birds": pipeline.suppressed_birds,"suppressed_people": pipeline.suppressed_people,
+                   "suppressed_unknown": pipeline.suppressed_unknown, "event_counts": dict(pipeline.event_counts),
+                   "frame_gaps": pipeline.frame_gaps,"run_id": pipeline.run_id,"status": run_status,
+                   "test_mode": config.test_mode,"source_type": "rtsp" if reader.live else "file",
+                   "camera_name": config.camera_name, "started_utc": started_utc,"finished_utc": utc_now(),
+                   "source_fps": reader.fps,"source_seconds": pipeline.last_time or 0.0,
+                   "observed_seconds": round(pipeline.observed_seconds,3),
+                   "max_processing_delay_seconds": round(max_latency,3),"pending_ai_at_stop": pending,
+                   "ai_overflows": live_ai.dropped_candidates if live_ai else 0,
+                   "elapsed_seconds": round(time.monotonic()-started,3)}
+        summary["report_path"] = store.save_run(summary)
+    return summary

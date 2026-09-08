@@ -8,7 +8,7 @@ GitHub distributes the source. GitHub Pages cannot run this desktop application 
 
 ## Windows
 
-1. Install Python 3.11 **64-bit** from [python.org](https://www.python.org/downloads/), including the Python launcher and Tcl/Tk.
+1. Install Python 3.11 **64-bit** from [python.org](https://www.python.org/downloads/), including pip and **tcl/tk and IDLE**. Select **Add python.exe to PATH**. You can leave **py launcher** unselected if that option is unavailable. Python 3.12 **64-bit** is also supported.
 2. Extract the repository into a writable folder such as `C:\JailWatch`. Use a local drive for the SQLite database.
 3. Run `INSTALL_WINDOWS.bat`. It creates a virtual environment, installs CPU dependencies, downloads YOLO11n and runs software tests. It stops on errors.
 4. Open `START_WINDOWS.bat`. In **Camera setup**, enter a name and the full RTSP URL supplied by your camera/NVR administrator, or select a local video.
@@ -16,6 +16,14 @@ GitHub distributes the source. GitHub Pages cannot run this desktop application 
 6. Start monitoring and check the image, zone direction, processing rate and alarm history.
 
 Installation needs internet. Monitoring uses the camera network and local weights. For an offline computer, prepare compatible package wheels and official weights on another computer and transfer them through your normal approved process.
+
+The installer checks an existing virtual environment, standard Python install folders, and PATH before trying the optional Python launcher. It reports the interpreter it finds and checks its version, architecture and required Python components. If Python was just installed, close the previous command window and reopen `INSTALL_WINDOWS.bat`.
+
+To check Python discovery without downloading dependencies, open Command Prompt in the extracted project folder and run:
+
+```bat
+INSTALL_WINDOWS.bat --check-python
+```
 
 ### RTSP source
 
@@ -73,7 +81,7 @@ Give each a distinct camera name and its own zones. Processes can share a local 
 
 | Symptom | Action |
 | --- | --- |
-| Python missing | Install 64-bit Python 3.11 with its launcher; rerun installation. |
+| Python missing or py launcher unavailable | Use the latest installer from this repository. Install 64-bit Python 3.11 or 3.12 with pip and Tcl/Tk; select Add python.exe to PATH and reopen the installer. The launcher is optional. |
 | Missing model | Click Download model, or select trusted local detection weights with `person` and `bird` classes. |
 | No preview | Verify IP connectivity, credentials, RTSP path/channel, camera session limits and codec. |
 | Disconnected | Check camera/network power and connectivity. The application retries and resets tracks after reconnection. |

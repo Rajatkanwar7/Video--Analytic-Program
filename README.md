@@ -6,7 +6,7 @@ A local desktop application for an RTSP IP camera or recorded video. It alerts o
 
 ## Start on Windows
 
-1. Install **Python 3.11, 64-bit**, with the Python launcher and Tcl/Tk enabled.
+1. Install **Python 3.11, 64-bit**, with pip and Tcl/Tk enabled. Select **Add python.exe to PATH**. The Python launcher is optional; Python 3.12, 64-bit is also supported.
 2. Download this repository using **Code → Download ZIP**, extract it, and run **INSTALL_WINDOWS.bat**. Internet is needed for packages and model weights.
 3. Run **START_WINDOWS.bat**. Open **Camera setup**, enter the RTSP URL or choose a video, and save settings.
 4. Click **Preview and draw zones**. Mark the outside and inside sides of the wall. Save zones, return to **Monitor**, and press **Start monitoring**.

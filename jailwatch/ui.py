@@ -118,7 +118,7 @@ class App(tk.Tk):
         self._style()
         self._build()
         self.refresh_history()
-        self.after(80, self.poll)
+        self.poll_after_id = self.after(80, self.poll)
         self.protocol("WM_DELETE_WINDOW", self.close_app)
 
     def _style(self):
@@ -424,7 +424,7 @@ class App(tk.Tk):
                 f"AI pending {frame.get('ai_pending', 0)}   |   Video time {frame['source_time']:.1f}s")
         if time.monotonic() - self.last_history_refresh > 3:
             self.refresh_history()
-        self.after(80, self.poll)
+        self.poll_after_id = self.after(80, self.poll)
 
     def refresh_history(self):
         if not hasattr(self, "table"):
@@ -487,4 +487,5 @@ class App(tk.Tk):
 
     def close_app(self):
         self.stop_event.set()
+        self.after_cancel(self.poll_after_id)
         self.destroy()

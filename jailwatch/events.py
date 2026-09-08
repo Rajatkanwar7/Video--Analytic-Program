@@ -4,6 +4,7 @@ import csv
 import json
 import sqlite3
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -29,10 +30,16 @@ class EventStore:
                 acknowledged_utc TEXT, note TEXT NOT NULL DEFAULT '')""")
             db.execute("CREATE INDEX IF NOT EXISTS events_created ON events(created_utc)")
 
+    @contextmanager
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10)
-        db.row_factory = sqlite3.Row
-        return db
+        try:
+            db.row_factory = sqlite3.Row
+            # SQLite's context manager commits/rolls back but does not close.
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def add(self, candidate, camera, run_id, image=None, details=None):
         event_id = uuid.uuid4().hex

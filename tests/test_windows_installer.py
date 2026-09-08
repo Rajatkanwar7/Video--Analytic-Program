@@ -15,9 +15,9 @@ class WindowsInstallerTests(unittest.TestCase):
         shutil.copy2(Path(__file__).resolve().parents[1] / "INSTALL_WINDOWS.bat", directory)
         environment = os.environ.copy()
         environment["LOCALAPPDATA"] = str(directory / "user data")
-        environment["ProgramFiles"] = str(directory / "program files")
+        environment["PROGRAMFILES"] = str(directory / "program files")
         environment["JAILWATCH_PYTHON"] = "invalid inherited value"
-        system32 = Path(environment["SystemRoot"]) / "System32"
+        system32 = Path(environment["SYSTEMROOT"]) / "System32"
         paths = [str(system32)]
         if on_path:
             paths.insert(0, str(Path(sys.executable).parent))

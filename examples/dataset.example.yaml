@@ -1,0 +1,9 @@
+# Change path to your locally stored, labeled dataset.
+path: /absolute/path/to/perimeter_dataset
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: person
+  1: bird
+  2: thrown_object

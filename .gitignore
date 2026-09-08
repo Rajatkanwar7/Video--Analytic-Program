@@ -216,3 +216,31 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# JailWatch local camera settings, evidence, recordings and weights
+local/
+data/
+models/
+training_runs/
+datasets/
+config.json
+credentials.json
+*.pt
+*.onnx
+*.engine
+*.mp4
+*.ts
+*.avi
+*.mkv
+*.mov
+*.jpg
+*.jpeg
+*.png
+*.sqlite3*
+*.db
+*.csv
+*.zip
+*.part
+mainConf.json
+models.json
+Analyticconfig.json

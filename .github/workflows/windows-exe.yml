@@ -50,7 +50,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path release -Force | Out-Null
           Copy-Item exe-validation.json dist/JailWatchVMS/exe-validation.json
-          python -c "import shutil; shutil.make_archive('release/JailWatchVMS-2.0.0-Windows-x64', 'zip', 'dist', 'JailWatchVMS')"
+          python -c "import shutil; shutil.make_archive('release/JailWatchVMS-2.0.1-Windows-x64', 'zip', 'dist', 'JailWatchVMS')"
           $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $compiler)) { choco install innosetup --yes --no-progress }
           & $compiler packaging/JailWatchVMS.iss
@@ -58,10 +58,11 @@ jobs:
           $packages = @(Get-ChildItem release -File | Where-Object { $_.Extension -in '.exe', '.zip' })
           $packages | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Set-Content release/SHA256SUMS.txt
           Copy-Item exe-validation.json release/exe-validation.json
+          Copy-Item vms-*.png release/
       - name: Verify setup installation under a normal user path
         run: |
           $destination = "$env:RUNNER_TEMP\JailWatch-installed"
-          $install = Start-Process -FilePath "release/JailWatchVMS-Setup-2.0.0-x64.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$destination" -PassThru -Wait
+          $install = Start-Process -FilePath "release/JailWatchVMS-Setup-2.0.1-x64.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$destination" -PassThru -Wait
           if ($install.ExitCode -ne 0) { throw 'Setup installation failed' }
           $test = Start-Process -FilePath "$destination\JailWatchVMS.exe" -ArgumentList '--self-test', "$PWD/installed-validation.json" -PassThru
           if (-not $test.WaitForExit(240000)) { Stop-Process -Id $test.Id -Force; throw 'Installed EXE self-test timed out' }
@@ -77,14 +78,14 @@ jobs:
           path: |
             exe-validation.json
             installed-validation.json
-            vms-preview.png
+            vms-*.png
             build/JailWatchVMS/warn-JailWatchVMS.txt
           if-no-files-found: ignore
       - name: Publish verified Windows download
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v2.0.0-$($env:GITHUB_SHA.Substring(0,7))"
+          $tag = "v2.0.1-$($env:GITHUB_SHA.Substring(0,7))"
           $assets = @((Get-ChildItem release -File).FullName)
-          gh release create $tag --target $env:GITHUB_SHA --title "JailWatch VMS 2.0.0 — Windows pilot" --notes-file docs/RELEASE_NOTES_2.0.md --latest @assets
+          gh release create $tag --target $env:GITHUB_SHA --title "JailWatch VMS 2.0.1 — Windows pilot" --notes-file docs/RELEASE_NOTES_2.0.md --latest @assets
           if ($LASTEXITCODE) { exit $LASTEXITCODE }

@@ -1,6 +1,6 @@
 # JailWatch VMS 2.0 — CCTV monitoring and perimeter alerts
 
-**Windows application:** [Download the latest verified EXE](https://github.com/Rajatkanwar7/Video--Analytic-Program/releases/latest). Open `JailWatchVMS-Setup-2.0.0-x64.exe` to install the application, Python runtime, CPU AI dependencies and default YOLO11n model. A portable ZIP is available in the same release.
+**Windows application:** [Download the latest verified EXE](https://github.com/Rajatkanwar7/Video--Analytic-Program/releases/latest). Open `JailWatchVMS-Setup-2.0.1-x64.exe` to install the application, Python runtime, CPU AI dependencies and default YOLO11n model. A portable ZIP is available in the same release.
 
 The VMS adds a 1/4/9/16 camera grid, local device inventory, ONVIF discovery and Media1/Media2 stream lookup, manual RTSP connections, per-channel NVR/DVR entries, stream-copy recording, local playback/export, storage retention and central alarm review. Windows protects saved camera source URLs with the current user's DPAPI account protection.
 

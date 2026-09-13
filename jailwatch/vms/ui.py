@@ -64,13 +64,44 @@ def scroll_form(parent):
     return outer,content
 
 
+def paragraph(parent, **options):
+    label = ttk.Label(parent,wraplength=600,**options)
+    label.bind("<Configure>",lambda event: label.configure(wraplength=max(100,event.width)))
+    return label
+
+
+class Toolbar(ttk.Frame):
+    """Keep all actions reachable when a smaller screen needs a second row."""
+    def __init__(self, parent, actions):
+        super().__init__(parent)
+        self.buttons = [ttk.Button(self,text=text,command=command) for text,command in actions]
+        self.last_width = None
+        self.configure(height=max(b.winfo_reqheight() for b in self.buttons)+5)
+        self.bind("<Configure>",lambda event: self.reflow(event.width))
+
+    def reflow(self, width):
+        if width < 100 or width==self.last_width:
+            return
+        self.last_width = width
+        x = y = 0
+        height = max(b.winfo_reqheight() for b in self.buttons)
+        for button in self.buttons:
+            size = button.winfo_reqwidth()
+            if x and x+size > width:
+                x = 0; y += height+6
+            button.place(x=x,y=y,width=size,height=height)
+            x += size+7
+        self.configure(height=y+height)
+
+
 class CameraDialog(tk.Toplevel):
     def __init__(self, app, camera=None, endpoint=""):
         super().__init__(app)
         self.app = app
         self.camera = copy.deepcopy(camera) if camera else Camera()
         self.title("Edit camera" if camera else "Add camera or recorder channel")
-        self.geometry("750x660"); self.minsize(710,620)
+        height = min(660,self.winfo_screenheight()-120)
+        self.geometry(f"750x{height}+30+20"); self.minsize(710,min(570,height))
         self.configure(bg=BG); self.transient(app)
         self.profiles = []; self.fingerprint = None
         outer = ttk.Frame(self,padding=22); outer.pack(fill="both",expand=True)
@@ -239,8 +270,11 @@ class CameraDialog(tk.Toplevel):
 class VMSApp(tk.Tk):
     def __init__(self, root=None, factory=None):
         super().__init__()
-        self.title("JailWatch VMS 2.0 | Control room")
-        self.geometry("1380x850"); self.minsize(1120,720)
+        self.title("JailWatch VMS 2.0.1 | Control room")
+        width = min(1380,self.winfo_screenwidth()-32)
+        height = min(850,self.winfo_screenheight()-120)
+        self.geometry(f"{width}x{height}+16+16")
+        self.minsize(min(980,width),min(600,height))
         self.configure(bg=BG)
         try:
             self.data_lock = DataLock(root or data_home())
@@ -290,8 +324,8 @@ class VMSApp(tk.Tk):
         self.option_add("*TCombobox*Listbox.foreground",TEXT)
 
     def _build(self):
-        sidebar = tk.Frame(self,bg="#101a28",width=185); sidebar.pack(side="left",fill="y"); sidebar.pack_propagate(False)
-        tk.Label(sidebar,text="JAILWATCH",bg="#101a28",fg=TEXT,font=("Segoe UI",18,"bold"),anchor="w").pack(fill="x",padx=20,pady=(28,0))
+        sidebar = tk.Frame(self,bg="#101a28",width=165); sidebar.pack(side="left",fill="y"); sidebar.pack_propagate(False)
+        tk.Label(sidebar,text="JAILWATCH",bg="#101a28",fg=TEXT,font=("Segoe UI",16,"bold"),anchor="w").pack(fill="x",padx=16,pady=(24,0))
         tk.Label(sidebar,text="VIDEO MANAGEMENT",bg="#101a28",fg=ACCENT,font=("Segoe UI",8,"bold"),anchor="w").pack(fill="x",padx=22,pady=(2,30))
         self.nav = {}
         for name in ("Live view","Devices","Recordings","Alarms","Settings"):
@@ -301,13 +335,13 @@ class VMSApp(tk.Tk):
         self.side_status = tk.StringVar(value="LOCAL SYSTEM\n0 cameras connected")
         tk.Label(sidebar,textvariable=self.side_status,bg="#101a28",fg=MUTED,justify="left",anchor="w",
                  font=("Segoe UI",9)).pack(side="bottom",fill="x",padx=22,pady=24)
-        main = ttk.Frame(self,padding=(24,20)); main.pack(side="left",fill="both",expand=True)
+        main = ttk.Frame(self,padding=(16,16)); main.pack(side="left",fill="both",expand=True)
         head = ttk.Frame(main); head.pack(fill="x",pady=(0,16))
         self.page_title = tk.StringVar(value="Live view")
         ttk.Label(head,textvariable=self.page_title,style="Title.TLabel").pack(side="left")
         self.clock = ttk.Label(head,text="",style="Muted.TLabel"); self.clock.pack(side="right")
         self.notice = tk.StringVar(value="Add a device to begin. RTSP and supported ONVIF streams stay on your local network.")
-        ttk.Label(main,textvariable=self.notice,style="Muted.TLabel",wraplength=1080).pack(fill="x",pady=(0,12))
+        paragraph(main,textvariable=self.notice,style="Muted.TLabel").pack(fill="x",pady=(0,12))
         self.workspace = ttk.Frame(main); self.workspace.pack(fill="both",expand=True)
         self.workspace.rowconfigure(0,weight=1); self.workspace.columnconfigure(0,weight=1)
         self.pages = {}
@@ -335,23 +369,25 @@ class VMSApp(tk.Tk):
         layout = ttk.Combobox(bar,textvariable=self.layout,values=["1","4","9","16"],state="readonly",width=4)
         layout.pack(side="right"); layout.bind("<<ComboboxSelected>>",lambda e: self.rebuild_grid())
         ttk.Label(bar,text="Views",style="Muted.TLabel").pack(side="right",padx=8)
-        controls = ttk.Frame(page); controls.pack(fill="x",pady=(0,12))
-        for text,command in [("Connect",self.start_selected),("Disconnect",self.stop_selected),
+        self.live_controls = Toolbar(page,[("Connect",self.start_selected),("Disconnect",self.stop_selected),
                              ("Record",lambda: self.record_selected(True)),("Stop REC",lambda: self.record_selected(False)),
-                             ("Snapshot",self.snapshot_selected),("AI zones",self.draw_zones),("Edit",self.edit_camera)]:
-            ttk.Button(controls,text=text,command=command).pack(side="left",padx=(0,7))
-        self.grid_frame = ttk.Frame(page); self.grid_frame.pack(fill="both",expand=True)
-        pager = ttk.Frame(page); pager.pack(fill="x",pady=(10,0))
+                             ("Snapshot",self.snapshot_selected),("AI zones",self.draw_zones),("Edit",self.edit_camera)])
+        self.live_controls.pack(fill="x",pady=(0,12))
+        self.grid_frame = ttk.Frame(page)
+        pager = ttk.Frame(page)
         ttk.Button(pager,text="Previous",command=lambda: self.change_page(-1)).pack(side="left")
         ttk.Button(pager,text="Next",command=lambda: self.change_page(1)).pack(side="left",padx=8)
         self.grid_status = ttk.Label(pager,text="",style="Muted.TLabel"); self.grid_status.pack(side="left",padx=12)
         ttk.Button(pager,text="Test alarm",command=self.test_alarm).pack(side="right")
         self.alarm_banner = tk.Label(page,text="No unacknowledged alerts",bg=PANEL,fg=MUTED,anchor="w",padx=14,pady=12,
                                      font=("Segoe UI",10,"bold"))
-        self.alarm_banner.pack(fill="x",pady=(12,0)); self.alarm_banner.bind("<Button-1>",lambda e: self.show_page("Alarms"))
+        self.alarm_banner.pack(side="bottom",fill="x",pady=(12,0))
+        self.alarm_banner.bind("<Button-1>",lambda e: self.show_page("Alarms"))
+        pager.pack(side="bottom",fill="x",pady=(10,0))
+        self.grid_frame.pack(fill="both",expand=True)
 
     def tree(self, page, columns):
-        box = ttk.Frame(page); box.pack(fill="both",expand=True)
+        box = ttk.Frame(page)
         tree = ttk.Treeview(box,columns=[c[0] for c in columns],show="headings",selectmode="extended")
         for key,label,width in columns:
             tree.heading(key,text=label); tree.column(key,width=width,minwidth=60)
@@ -362,18 +398,18 @@ class VMSApp(tk.Tk):
 
     def _devices(self):
         page = self.pages["Devices"]
-        bar = ttk.Frame(page); bar.pack(fill="x",pady=(0,14))
-        for text,command in [("+ Add device",self.add_camera),("Discover ONVIF",self.discover),
+        self.device_controls = Toolbar(page,[("+ Add device",self.add_camera),("Discover ONVIF",self.discover),
                              ("Edit selected",self.edit_device_row),("Health",self.health),("Remove",self.remove_device),
-                             ("Connect all",self.start_all),("Disconnect all",self.manager.stop_all)]:
-            ttk.Button(bar,text=text,command=command).pack(side="left",padx=(0,8))
+                             ("Connect all",self.start_all),("Disconnect all",self.manager.stop_all)])
+        self.device_controls.pack(fill="x",pady=(0,14))
         self.device_tree = self.tree(page,[("name","Camera",180),("group","Site / group",130),("status","Connection",180),
                                           ("ai","Analytics",190),("record","Recording",130),("source","Source",240)])
         self.device_tree.bind("<Double-1>",lambda e: self.edit_device_row())
-        bottom = ttk.Frame(page); bottom.pack(fill="x",pady=(14,0))
+        bottom = ttk.Frame(page); bottom.pack(side="bottom",fill="x",pady=(14,0))
         ttk.Button(bottom,text="Import earlier JailWatch camera",command=self.import_camera).pack(side="left")
         ttk.Button(bottom,text="Export device names",command=self.export_inventory).pack(side="left",padx=8)
-        ttk.Label(bottom,text="Use one device entry per camera or recorder channel.",style="Muted.TLabel").pack(side="right")
+        paragraph(page,text="Use one device entry per camera or recorder channel.",style="Muted.TLabel").pack(side="bottom",fill="x",pady=(10,0))
+        self.device_tree.master.pack(fill="both",expand=True)
 
     def _recordings(self):
         page = self.pages["Recordings"]
@@ -389,11 +425,12 @@ class VMSApp(tk.Tk):
         self.record_tree = self.tree(page,[("camera","Camera",190),("start","Start (UTC, approximate)",220),
                                          ("duration","Seconds",120),("size","Size",120)])
         self.record_tree.bind("<Double-1>",lambda e: self.play_recording())
-        bottom = ttk.Frame(page); bottom.pack(fill="x",pady=(14,0))
+        bottom = ttk.Frame(page); bottom.pack(side="bottom",fill="x",pady=(14,0))
         ttk.Button(bottom,text="Export selected MKV",command=self.export_recording).pack(side="left")
         self.storage_status = ttk.Label(bottom,text="",style="Muted.TLabel"); self.storage_status.pack(side="right")
-        ttk.Label(page,text="Completed segments appear here. Stop recording to close the current segment. Playback covers recordings made by this VMS.",
-                  style="Muted.TLabel",wraplength=1050).pack(fill="x",pady=(12,0))
+        paragraph(page,text="Completed segments appear here. Stop recording to close the current segment. Playback covers recordings made by this VMS.",
+                  style="Muted.TLabel").pack(side="bottom",fill="x",pady=(12,0))
+        self.record_tree.master.pack(fill="both",expand=True)
 
     def _alarms(self):
         page = self.pages["Alarms"]
@@ -407,14 +444,16 @@ class VMSApp(tk.Tk):
         self.alarm_tree = self.tree(page,[("time","Created (UTC)",180),("camera","Camera",170),("kind","Event",180),
                                         ("source","Source time",100),("review","Review",100)])
         self.alarm_tree.bind("<Double-1>",lambda e: self.evidence())
-        bottom = ttk.Frame(page); bottom.pack(fill="x",pady=(14,0))
+        bottom = ttk.Frame(page); bottom.pack(side="bottom",fill="x",pady=(14,0))
         for text,command in [("Acknowledge selected",self.acknowledge),("Export all events",self.export_events),
                              ("Export selected trajectories",self.export_trajectories)]:
             ttk.Button(bottom,text=text,command=command).pack(side="left",padx=(0,8))
-        ttk.Label(page,text="Suspected throws require review. Test alarms check the display and sound only.",style="Muted.TLabel").pack(fill="x",pady=(12,0))
+        paragraph(page,text="Suspected throws require review. Test alarms check the display and sound only.",style="Muted.TLabel").pack(side="bottom",fill="x",pady=(12,0))
+        self.alarm_tree.master.pack(fill="both",expand=True)
 
     def _settings(self):
-        page = self.pages["Settings"]
+        outer,page = scroll_form(self.pages["Settings"])
+        outer.pack(fill="both",expand=True)
         ttk.Label(page,text="Storage and processing",font=("Segoe UI",15,"bold")).pack(anchor="w",pady=(0,18))
         form = ttk.Frame(page); form.pack(fill="x"); form.columnconfigure(1,weight=1)
         self.preference_vars = {}
@@ -425,19 +464,20 @@ class VMSApp(tk.Tk):
             field(form,label,self.preference_vars[key],row)
         self.sound = tk.BooleanVar(value=self.inventory.preferences.beep)
         ttk.Checkbutton(page,text="Sound the system bell for alerts",variable=self.sound).pack(anchor="w",pady=12)
-        ttk.Label(page,text="Oldest completed VMS recordings are deleted when the retention or size limit is exceeded. "
+        paragraph(page,text="Oldest completed VMS recordings are deleted when the retention or size limit is exceeded. "
                   "Active segments temporarily add to the size limit. Recording pauses below 1 GB free. "
-                  "Export evidence you need to retain. Stop cameras before changing these settings.",style="Muted.TLabel",wraplength=900).pack(anchor="w",pady=12)
+                  "Export evidence you need to retain. Stop cameras before changing these settings.",style="Muted.TLabel").pack(fill="x",pady=12)
         ttk.Button(page,text="Save settings",style="Accent.TButton",command=self.save_preferences).pack(anchor="w",pady=8)
         ttk.Separator(page).pack(fill="x",pady=22)
         ttk.Label(page,text="Application data",font=("Segoe UI",13,"bold")).pack(anchor="w")
-        ttk.Label(page,text=str(self.inventory.root),style="Muted.TLabel",wraplength=950).pack(anchor="w",pady=8)
+        paragraph(page,text=str(self.inventory.root),style="Muted.TLabel").pack(fill="x",pady=8)
         buttons = ttk.Frame(page); buttons.pack(fill="x",pady=8)
         ttk.Button(buttons,text="Open data folder",command=lambda: open_folder(self.inventory.root)).pack(side="left")
         ttk.Button(buttons,text="Download default AI model",command=self.download_model).pack(side="left",padx=10)
-        ttk.Label(page,text="The Windows EXE includes CPU AI and video dependencies. More cameras and higher resolutions require more processing capacity. "
+        paragraph(page,text="Keep JailWatch open while recording or monitoring. Closing the application stops recording and alerts. "
+                  "The Windows EXE includes CPU AI and video dependencies. More cameras and higher resolutions require more processing capacity. "
                   "Check frame loss, AI delay and recording status on the actual CCTV computer. F11 toggles full screen.",
-                  style="Muted.TLabel",wraplength=950).pack(anchor="w",pady=16)
+                  style="Muted.TLabel").pack(fill="x",pady=16)
 
     def background(self, work, done, failed=None):
         def task():
@@ -672,8 +712,9 @@ class VMSApp(tk.Tk):
             self.grid_frame.rowconfigure(n,weight=1 if n<side else 0)
         self.tiles = {}; self.photos = {}; self.tile_stamps = {}
         if not cameras:
-            welcome = ttk.Frame(self.grid_frame,padding=22,style="Card.TFrame")
-            welcome.grid(row=0,column=0,columnspan=side,rowspan=side,sticky="nsew")
+            outer,welcome = scroll_form(self.grid_frame)
+            welcome.configure(style="Card.TFrame")
+            outer.grid(row=0,column=0,columnspan=side,rowspan=side,sticky="nsew")
             tk.Label(welcome,text="Your control room starts here",bg=PANEL,fg=TEXT,
                      font=("Segoe UI",20,"bold"),anchor="w").pack(fill="x",pady=(0,10))
             for title,description in [
@@ -916,6 +957,10 @@ class VMSApp(tk.Tk):
     def close_app(self):
         if self.closing:
             return
+        if any(self.manager.running(key) for key in self.manager.workers):
+            if not messagebox.askyesno("Close JailWatch VMS?",
+                    "Closing stops all live views, recording and detection alerts.\n\nClose the application?",parent=self):
+                return
         self.closing = True
         self.after_cancel(self.poll_id)
         for child in self.winfo_children():

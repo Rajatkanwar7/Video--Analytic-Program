@@ -1,6 +1,8 @@
 JailWatch VMS adds multi-camera viewing, ONVIF stream lookup, local recording/playback and central alarm review to the existing perimeter analytics.
 
-Download **JailWatchVMS-Setup-2.0.0-x64.exe** for the normal Windows installation. Python, video/CPU-AI dependencies and the generic YOLO11n model are included. A portable ZIP is also available; extract its entire folder before opening JailWatchVMS.exe.
+Version 2.0.1 corrects layout clipping on smaller screens, keeps alarm controls visible, and asks before closing an active monitoring session. Keep the desktop application open for recording and alerts; it does not run as an unattended Windows service.
+
+Download **JailWatchVMS-Setup-2.0.1-x64.exe** for the normal Windows installation. Python, video/CPU-AI dependencies and the generic YOLO11n model are included. A portable ZIP is also available; extract its entire folder before opening JailWatchVMS.exe.
 
 Features include 1/4/9/16 camera layouts, per-camera connection and recording status, ONVIF discovery and Media1/Media2 stream lookup, manual RTSP/video input, stream-copy MKV recordings, playback and export, recording retention, Windows account-protected saved logins, and person/suspected-throw alerts with trajectory evidence.
 

@@ -33,7 +33,11 @@ def run(destination, screenshot=None):
         from .devices import Camera,bundled_model
         from .onvif import envelope,DEVICE
         from .recording import ffmpeg_executable
-        from .ui import VMSApp
+        from .ui import VMSApp,CameraDialog
+        def capture(window, name):
+            window.update()
+            ImageGrab.grab(bbox=(window.winfo_rootx(),window.winfo_rooty(),
+                window.winfo_rootx()+window.winfo_width(),window.winfo_rooty()+window.winfo_height())).save(name)
         torch.set_num_threads(2)
         detector = YoloDetector(Config(model=bundled_model(),image_size=640,device="cpu"))
         detector.predict(np.zeros((360,640,3),np.uint8))
@@ -68,7 +72,12 @@ def run(destination, screenshot=None):
                 report["loopback_rtsp"] = True
             app = VMSApp(Path(root)/"vms")
             stack.callback(close_app)
-            app.geometry("1260x810+0+0")
+            app.update()
+            if screenshot:
+                capture(app,Path(screenshot).with_name("vms-welcome.png"))
+                dialog = CameraDialog(app)
+                capture(dialog,Path(screenshot).with_name("vms-camera-setup.png"))
+                dialog.destroy()
             for i,name in enumerate(("Demo · North wall","Demo · Entry gate","Demo · Tower 01","Demo · Service lane")):
                 camera = Camera(name=name,group="Demonstration")
                 camera.config.source = input_source
@@ -103,9 +112,13 @@ def run(destination, screenshot=None):
                 cap.release()
             report["recording_and_playback"] = True
             app.test_alarm(); app.refresh_alarms(); app.update()
+            if app.winfo_rootx()+app.winfo_width() > app.winfo_screenwidth() or app.winfo_rooty()+app.winfo_height() > app.winfo_screenheight():
+                raise RuntimeError("Application window extends outside the screen")
+            if not app.alarm_banner.winfo_viewable() or app.alarm_banner.winfo_rooty()+app.alarm_banner.winfo_height() > app.winfo_rooty()+app.winfo_height():
+                raise RuntimeError("Alarm banner is clipped")
+            report["screen_fit"] = True
             if screenshot:
-                ImageGrab.grab(bbox=(app.winfo_rootx(),app.winfo_rooty(),
-                    app.winfo_rootx()+app.winfo_width(),app.winfo_rooty()+app.winfo_height())).save(screenshot)
+                capture(app,screenshot)
             report["desktop_and_test_alarm"] = bool(app.events.list())
             close_app()
             report["passed"] = True

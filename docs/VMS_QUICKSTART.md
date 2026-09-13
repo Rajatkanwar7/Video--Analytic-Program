@@ -5,10 +5,10 @@ JailWatch VMS runs on your Windows CCTV computer. It combines a camera grid, dev
 ## Install the EXE
 
 1. Open this project's [latest Windows release](https://github.com/Rajatkanwar7/Video--Analytic-Program/releases/latest).
-2. Download `JailWatchVMS-Setup-2.0.0-x64.exe` and run the installer. Python is included; no Python launcher or BAT file is needed.
+2. Download `JailWatchVMS-Setup-2.0.1-x64.exe` and run the installer. Python is included; no Python launcher or BAT file is needed.
 3. Open **JailWatch VMS** from the desktop or Start menu. Installation is for your current Windows account and does not require administrator privileges.
 
-Alternatively download `JailWatchVMS-2.0.0-Windows-x64.zip`, extract the entire folder, and open `JailWatchVMS.exe`. Keep its `_internal` folder beside it. Copying the EXE alone will not work. The setup EXE installs that complete application for you.
+Alternatively download `JailWatchVMS-2.0.1-Windows-x64.zip`, extract the entire folder, and open `JailWatchVMS.exe`. Keep its `_internal` folder beside it. Copying the EXE alone will not work. The setup EXE installs that complete application for you.
 
 The current installer is unsigned. If Windows or your organisation blocks it, use your IT team's normal application review process. Release checksums are provided in `SHA256SUMS.txt`.
 
@@ -29,7 +29,10 @@ For an NVR/DVR, add one entry per channel/profile. A camera on an NVR's private 
 
 ## Use the camera grid
 
+Keep the application open while recording or monitoring. You can minimize it. Closing it, signing out, shutting down or restarting the computer stops recording and detection alerts. After reopening it, reconnect the required cameras and restart recording. This release is a desktop VMS, not an unattended Windows recording service.
+
 - Choose 1, 4, 9 or 16 views. Click a tile to select it; double-click to enlarge it. Use Previous/Next for additional saved devices and F11 for full screen.
+- The window starts within your screen; controls wrap on smaller displays and longer settings forms scroll.
 - **Connect** and **Disconnect** affect the selected camera. **Devices → Connect all** respects the configured live/AI limits and reports cameras that could not start.
 - A green tile indicator means recent frames are arriving. Stale images display **NO CURRENT VIDEO**. Check Devices for connection, AI and recording status.
 - The inventory can hold up to 256 entries. At most 16 streams can be open in this process. These are software limits, not a promise that a particular computer can process that many streams at full resolution.

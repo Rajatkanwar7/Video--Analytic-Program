@@ -31,6 +31,29 @@ class VMSDesktopTests(unittest.TestCase):
         self.assertEqual(rows[0]["kind"],"system_test")
         self.assertIn("SYSTEM TEST",self.app.alarm_banner.cget("text"))
 
+    def test_small_screen_keeps_alarm_and_actions_inside_the_window(self):
+        self.app.geometry("992x648+0+0")
+        self.app.update()
+        for page,toolbar in [("Live view",self.app.live_controls),("Devices",self.app.device_controls)]:
+            self.app.show_page(page); self.app.update()
+            for button in toolbar.buttons:
+                self.assertTrue(button.winfo_viewable())
+                self.assertLessEqual(button.winfo_x()+button.winfo_width(),toolbar.winfo_width())
+                self.assertLessEqual(button.winfo_y()+button.winfo_height(),toolbar.winfo_height())
+        self.app.show_page("Live view"); self.app.update()
+        self.assertTrue(self.app.alarm_banner.winfo_viewable())
+        self.assertLessEqual(self.app.alarm_banner.winfo_rooty()+self.app.alarm_banner.winfo_height(),self.app.winfo_rooty()+self.app.winfo_height())
+        self.assertGreater(self.app.grid_frame.winfo_height(),100)
+
+    def test_cancel_close_keeps_active_monitoring_open(self):
+        with patch.dict(self.app.manager.workers,{"active":object()}), \
+             patch.object(self.app.manager,"running",return_value=True), \
+             patch("jailwatch.vms.ui.messagebox.askyesno",return_value=False) as confirm:
+            self.app.close_app()
+            confirm.assert_called_once()
+        self.assertFalse(self.app.closing)
+        self.assertTrue(self.app.winfo_exists())
+
     def test_camera_form_saves_rtsp_and_grid_selection_survives_layout_changes(self):
         from jailwatch.vms.ui import CameraDialog
         dialog = CameraDialog(self.app)

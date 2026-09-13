@@ -41,7 +41,7 @@ def main():
                     destination=license_dir/name/Path(item).name
                     destination.parent.mkdir(parents=True,exist_ok=True)
                     shutil.copy2(source,destination)
-    (output/"BUILD_INFO.json").write_text(json.dumps({"version":"2.0.0","commit":os.environ.get("GITHUB_SHA","local"),
+    (output/"BUILD_INFO.json").write_text(json.dumps({"version":"2.0.1","commit":os.environ.get("GITHUB_SHA","local"),
         "python":sys.version,"model_sha256":checksum(model),"packages":packages},indent=2),encoding="utf-8")
     import imageio_ffmpeg
     license_text=subprocess.check_output([imageio_ffmpeg.get_ffmpeg_exe(),"-L"],stderr=subprocess.STDOUT).decode("utf-8",errors="replace")

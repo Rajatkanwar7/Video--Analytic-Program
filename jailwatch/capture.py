@@ -8,6 +8,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+os.environ.setdefault("OPENCV_FFMPEG_LOGLEVEL", "-8")
+
 
 @dataclass
 class Frame:

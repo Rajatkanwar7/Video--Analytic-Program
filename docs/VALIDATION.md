@@ -1,6 +1,16 @@
 # Validation record and camera acceptance
 
-This separates implemented behavior from measured detection accuracy. No camera-specific detection rate or newly trained model is claimed for version 1.1.
+This separates implemented behavior from measured detection accuracy. No camera-specific detection rate or newly trained model is claimed.
+
+## Version 2.0 VMS validation
+
+The Linux development environment now supports OpenCV. The expanded suite covers concurrent camera workers, private device storage and its single-instance lock, local ONVIF Media1/Media2 SOAP fixtures, real FFmpeg recording and decoding, retention, and VMS desktop navigation. Windows/display cases run in CI.
+
+A separate local integration check successfully opened two simultaneous RTSP viewers through a loopback MediaMTX server and finalized a playable recording. The input was synthetic video, not a physical CCTV device. This test found and corrected an unsupported FFmpeg RTSP timeout option.
+
+The [Windows EXE workflow](https://github.com/Rajatkanwar7/Video--Analytic-Program/actions/workflows/windows-exe.yml) builds a native package, runs bundled YOLO on a blank frame, displays four simulated RTSP streams, records and decodes a segment, creates an operator test alarm, then repeats these checks after silent setup installation. It publishes a release only after those checks pass. Read the release's `exe-validation.json` and `installed-validation.json` for the actual build outcome. These checks do not measure object-detection accuracy, long-duration reliability, physical-camera interoperability, or superiority over another VMS.
+
+For a comparison with your existing VMS, use the same computer, camera streams, codecs and recording load. Measure time to connect a camera, time to find/export an incident, reconnect time, recording gaps, CPU/RAM use, event recall, false alarms per hour and alert delay. Include operator review and an extended recording test before considering replacement of an operational system.
 
 ## Version 1.1 validation
 

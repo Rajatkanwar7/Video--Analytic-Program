@@ -1,4 +1,16 @@
-# JailWatch 1.1 — CCTV perimeter monitor
+# JailWatch VMS 2.0 — CCTV monitoring and perimeter alerts
+
+**Windows application:** [Download the latest verified EXE](https://github.com/Rajatkanwar7/Video--Analytic-Program/releases/latest). Open `JailWatchVMS-Setup-2.0.0-x64.exe` to install the application, Python runtime, CPU AI dependencies and default YOLO11n model. A portable ZIP is available in the same release.
+
+The VMS adds a 1/4/9/16 camera grid, local device inventory, ONVIF discovery and Media1/Media2 stream lookup, manual RTSP connections, per-channel NVR/DVR entries, stream-copy recording, local playback/export, storage retention and central alarm review. Windows protects saved camera source URLs with the current user's DPAPI account protection.
+
+**[VMS setup and camera compatibility guide](docs/VMS_QUICKSTART.md)** · **[Windows build instructions](docs/WINDOWS_BUILD.md)**
+
+The VMS is a **pilot**, with up to 16 concurrent views and a configurable AI-camera limit. These limits do not establish server throughput. Actual cameras, codecs, network conditions and model accuracy need validation. It is not certified to work with every CCTV device or as a complete ONVIF Profile S/T/G client.
+
+From source, run `python -m jailwatch vms`; `START_WINDOWS.bat` now opens the VMS. To use the earlier single-camera monitor and its existing local configuration, run `python -m jailwatch gui --config local/camera.json`.
+
+## Existing perimeter analytics
 
 A local desktop application for an RTSP IP camera or recorded video. It alerts on moving people in a configured inside zone and on small moving objects crossing from outside to inside. Recognized birds are filtered from crossing alerts.
 
@@ -8,7 +20,7 @@ A local desktop application for an RTSP IP camera or recorded video. It alerts o
 
 1. Install **Python 3.11, 64-bit**, with pip and Tcl/Tk enabled. Select **Add python.exe to PATH**. The Python launcher is optional; Python 3.12, 64-bit is also supported.
 2. Download this repository using **Code → Download ZIP**, extract it, and run **INSTALL_WINDOWS.bat**. Internet is needed for packages and model weights.
-3. Run **START_WINDOWS.bat**. Open **Camera setup**, enter the RTSP URL or choose a video, and save settings.
+3. For the earlier single-camera interface, run `.venv\Scripts\python.exe -m jailwatch gui`. Open **Camera setup**, enter the RTSP URL or choose a video, and save settings. `START_WINDOWS.bat` opens the new VMS instead; follow the guide above for its device setup.
 4. Click **Preview and draw zones**. Mark the outside and inside sides of the wall. Save zones, return to **Monitor**, and press **Start monitoring**.
 5. Review red alerts in **Alarm history**. Open the snapshot, add a review note, and acknowledge the event.
 

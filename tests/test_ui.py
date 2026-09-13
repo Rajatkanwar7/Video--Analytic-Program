@@ -19,7 +19,7 @@ class DesktopTests(unittest.TestCase):
             app = App(path)
             try:
                 app.update()
-                self.assertEqual(app.title(), "JailWatch 1.1.0 | CCTV monitor")
+                self.assertEqual(app.title(), "JailWatch 2.0.0 | CCTV monitor")
                 self.assertEqual(len(app.tabs.tabs()), 3)
                 self.assertTrue(app.save())
                 app.tabs.select(app.setup_tab)

@@ -1,4 +1,6 @@
-# Installation and deployment
+# Source installation and deployment
+
+For the **Windows EXE and multi-camera VMS**, start with [VMS Quick Start](VMS_QUICKSTART.md). The EXE includes Python. These instructions retain the optional source installation and legacy single-camera interface.
 
 ## What runs where
 
@@ -11,9 +13,9 @@ GitHub distributes the source. GitHub Pages cannot run this desktop application 
 1. Install Python 3.11 **64-bit** from [python.org](https://www.python.org/downloads/), including pip and **tcl/tk and IDLE**. Select **Add python.exe to PATH**. You can leave **py launcher** unselected if that option is unavailable. Python 3.12 **64-bit** is also supported.
 2. Extract the repository into a writable folder such as `C:\JailWatch`. Use a local drive for the SQLite database.
 3. Run `INSTALL_WINDOWS.bat`. It creates a virtual environment, installs CPU dependencies, downloads YOLO11n and runs software tests. It stops on errors.
-4. Open `START_WINDOWS.bat`. In **Camera setup**, enter a name and the full RTSP URL supplied by your camera/NVR administrator, or select a local video.
-5. Save settings, click **Preview and draw zones**, draw outside and inside polygons, and save.
-6. Start monitoring and check the image, zone direction, processing rate and alarm history.
+4. Open `START_WINDOWS.bat` to launch VMS. Click **Add device**, enter the device IP and ONVIF login, then choose a stream. Alternatively use the RTSP / video file tab.
+5. Save the camera, click **AI zones**, draw outside and inside polygons, and save.
+6. Click **Connect** and check the image, zone direction, processing rate and alarm history. To use the earlier single-camera interface instead, run `.venv\Scripts\python.exe -m jailwatch gui`.
 
 Installation needs internet. Monitoring uses the camera network and local weights. For an offline computer, prepare compatible package wheels and official weights on another computer and transfer them through your normal approved process.
 
@@ -35,7 +37,7 @@ rtsp://USERNAME:PASSWORD@CAMERA_IP:554/VENDOR_STREAM_PATH
 
 Use the real vendor path, not the literal example. URL-encode reserved characters in credentials. Test the same URL in your existing video player if preview fails.
 
-The UI masks the source field, but the local JSON can contain the camera login in plaintext. Protect it with the computer's account/folder permissions and do not commit or share it. Advanced setups can leave `source` empty and set `source_env` to a variable such as `JAILWATCH_RTSP_URL`; the application reads the actual URL from that environment variable.
+VMS encrypts saved credentials with the current Windows account. The **legacy single-camera JSON** can contain the camera login in plaintext. Protect it with the computer's account/folder permissions and do not commit or share it. Advanced legacy configurations can leave `source` empty and set `source_env` to a variable such as `JAILWATCH_RTSP_URL`.
 
 ### After reboot
 
@@ -68,7 +70,7 @@ Use a graphical desktop for the GUI. Without a display:
 
 ## Multiple cameras
 
-Use one process per source and a separate configuration per camera:
+VMS provides one inventory and shared video wall: `python -m jailwatch vms`. For separate legacy single-camera windows, use one process per source and a separate configuration per camera:
 
 ```bash
 python -m jailwatch gui --config local/tower1.json

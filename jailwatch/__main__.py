@@ -14,6 +14,8 @@ from pathlib import Path
 def main(argv=None):
     parser = argparse.ArgumentParser(description="JailWatch: local CCTV person and crossing alerts")
     commands = parser.add_subparsers(dest="command")
+    vms = commands.add_parser("vms", help="Open the multi-camera VMS")
+    vms.add_argument("--data-dir", help="Local VMS data directory; defaults to the current user's application data")
     gui = commands.add_parser("gui", help="Open the desktop monitor (default)")
     gui.add_argument("--config", default="local/camera.json")
     run = commands.add_parser("run", help="Run without a desktop; write alerts and JSON messages")
@@ -33,7 +35,10 @@ def main(argv=None):
     init.add_argument("--output", default="local/camera.json")
     args = parser.parse_args(argv)
     try:
-        if args.command in (None, "gui"):
+        if args.command == "vms":
+            from .vms.ui import launch
+            launch(args.data_dir)
+        elif args.command in (None, "gui"):
             from .ui import App
             App(getattr(args, "config", "local/camera.json")).mainloop()
         elif args.command == "doctor":

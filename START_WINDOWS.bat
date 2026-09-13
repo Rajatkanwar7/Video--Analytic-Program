@@ -6,5 +6,5 @@ if not exist ".venv\Scripts\python.exe" (
     pause
     exit /b 1
 )
-.venv\Scripts\python.exe -m jailwatch gui %*
+.venv\Scripts\python.exe -m jailwatch vms %*
 if errorlevel 1 pause

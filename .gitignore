@@ -241,6 +241,12 @@ credentials.json
 *.csv
 *.zip
 *.part
+build_assets/
+release/
+exe-validation.json
+installed-validation.json
+*.key
+auto.crt
 mainConf.json
 models.json
 Analyticconfig.json

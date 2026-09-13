@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jailwatch"
-version = "1.1.0"
+version = "2.0.0"
 description = "Local RTSP CCTV monitoring with person and suspected throw alerts"
 requires-python = ">=3.11,<3.13"
 readme = "README.md"
-dependencies = ["numpy==2.3.5", "opencv-python==4.13.0.92", "Pillow==12.1.0", "PyYAML==6.0.3"]
+dependencies = ["numpy==2.3.5", "opencv-python==4.13.0.92", "Pillow==12.1.0", "PyYAML==6.0.3", "requests==2.32.5", "defusedxml==0.7.1", "imageio-ffmpeg==0.6.0"]
 
 [project.optional-dependencies]
 ai = ["torch==2.6.0", "torchvision==0.21.0", "ultralytics==8.3.228"]

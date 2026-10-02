@@ -29,6 +29,12 @@ class Config:
     semantic_interval_seconds: float = 0.5
     inside_zone: list = field(default_factory=list)
     outside_zone: list = field(default_factory=list)
+    fence_zone: list = field(default_factory=list)
+    crossing_direction: str = "outside_to_inside"
+    unknown_crossing_policy: str = "alert"
+    fence_dwell_seconds: float = 2.0
+    person_context_seconds: float = 3.0
+    launch_person_distance: float = 0.12
     ignore_zones: list = field(default_factory=list)
     calibration_size: list = field(default_factory=list)
     processing_width: int = 1280
@@ -82,6 +88,8 @@ class Config:
             "retention_days": (1, 365), "max_events": (50, 100000),
             "open_timeout_ms": (500, 30000), "read_timeout_ms": (500, 30000),
             "reconnect_seconds": (0.2, 60),
+            "fence_dwell_seconds": (0.5, 60), "person_context_seconds": (0.1, 10),
+            "launch_person_distance": (0.01, 0.3),
         }
         integer_fields = {"image_size", "processing_width", "min_track_points", "retention_days",
                           "max_events", "open_timeout_ms", "read_timeout_ms"}
@@ -95,6 +103,10 @@ class Config:
         for name in ("beep", "require_object_class", "show_trajectories", "test_mode"):
             if not isinstance(getattr(self, name), bool):
                 raise ValueError(f"{name} must be true or false.")
+        if self.crossing_direction not in ("outside_to_inside", "inside_to_outside", "both"):
+            raise ValueError("Crossing direction must be outside_to_inside, inside_to_outside or both.")
+        if self.unknown_crossing_policy not in ("alert", "review"):
+            raise ValueError("Unknown crossings must use alert or review policy.")
         if self.min_blob_area_ratio >= self.max_blob_area_ratio:
             raise ValueError("Minimum object area must be smaller than maximum area.")
         if self.max_track_gap_seconds > self.reset_gap_seconds:
@@ -107,6 +119,7 @@ class Config:
                 raise ValueError("Calibration size must be [width, height].")
         validate_polygon(self.inside_zone, "Inside zone", optional=not zones)
         validate_polygon(self.outside_zone, "Outside zone", optional=not zones)
+        validate_polygon(self.fence_zone, "Fence watch zone", optional=True)
         if self.inside_zone and self.outside_zone:
             if polygons_overlap(self.inside_zone, self.outside_zone):
                 raise ValueError("Inside and outside zones must not overlap. A shared edge is allowed.")

@@ -1,14 +1,15 @@
-# JailWatch VMS 2.0 — start here
+# JailWatch VMS 2.1 — start here
 
 JailWatch VMS runs on your Windows CCTV computer. It combines a camera grid, device setup, local recording/playback and the project's person/trajectory/crossing analytics. It is a pilot VMS; camera interoperability and detection accuracy must be checked on your equipment.
 
 ## Install the EXE
 
 1. Open this project's [latest Windows release](https://github.com/Rajatkanwar7/Video--Analytic-Program/releases/latest).
-2. Download `JailWatchVMS-Setup-2.0.1-x64.exe` and run the installer. Python is included; no Python launcher or BAT file is needed.
-3. Open **JailWatch VMS** from the desktop or Start menu. Installation is for your current Windows account and does not require administrator privileges.
+2. Download `JailWatchVMS-Setup-2.1.0-x64.exe` and run the installer. Python is included; no Python launcher or BAT file is needed.
+3. Open **JailWatch VMS** from the desktop or Start menu. Create your first administrator with a 15–128 character passphrase. There is no default password. Later launches ask you to sign in before opening the camera wall. Installation uses your current Windows account.
+4. Use Settings → Manage operator accounts to add staff. See [accounts](ACCOUNTS.md) for roles, password changes and recovery planning.
 
-Alternatively download `JailWatchVMS-2.0.1-Windows-x64.zip`, extract the entire folder, and open `JailWatchVMS.exe`. Keep its `_internal` folder beside it. Copying the EXE alone will not work. The setup EXE installs that complete application for you.
+Alternatively download `JailWatchVMS-2.1.0-Windows-x64.zip`, extract the entire folder, and open `JailWatchVMS.exe`. Keep its `_internal` folder beside it. Copying the EXE alone will not work. The setup EXE installs that complete application for you.
 
 The current installer is unsigned. If Windows or your organisation blocks it, use your IT team's normal application review process. Release checksums are provided in `SHA256SUMS.txt`.
 
@@ -29,7 +30,7 @@ For an NVR/DVR, add one entry per channel/profile. A camera on an NVR's private 
 
 ## Use the camera grid
 
-Keep the application open while recording or monitoring. You can minimize it. Closing it, signing out, shutting down or restarting the computer stops recording and detection alerts. After reopening it, reconnect the required cameras and restart recording. This release is a desktop VMS, not an unattended Windows recording service.
+Keep the application open while recording or monitoring. You can minimize it. Closing it, signing out, shutting down or restarting the computer stops recording and detection alerts. After sign-in, saved cameras reconnect when Auto connect is enabled in Settings; recording must be restarted explicitly. Use Windows lock if you want processing to continue while the workstation is locked. This release is a desktop VMS, not an unattended Windows recording service.
 
 - Choose 1, 4, 9 or 16 views. Click a tile to select it; double-click to enlarge it. Use Previous/Next for additional saved devices and F11 for full screen.
 - The window starts within your screen; controls wrap on smaller displays and longer settings forms scroll.
@@ -42,10 +43,12 @@ Keep the application open while recording or monitoring. You can minimize it. Cl
 New devices begin in **VIEW ONLY** mode. This lets you verify the video connection before calibrating detection.
 
 1. Disconnect the selected camera.
-2. Click **AI zones**. Draw outside and inside polygons on the real camera view; optionally mask irrelevant vegetation. Saving zones enables AI for that camera.
-3. In **Edit → AI settings**, choose your weights and thresholds available there. The Windows package includes the generic YOLO11n model and CPU inference. Keep **Require custom thrown_object class** off with this model. Enable test-mode labels for controlled trials.
+2. Click **AI zones**. Draw outside and inside polygons on the real camera view; optionally mask irrelevant vegetation. Add a FENCE polygon over the near-fence ground area to enable sustained-person warnings. Saving zones enables AI for that camera.
+3. In **Edit → AI settings**, choose your weights and thresholds available there. The Windows package includes the generic YOLO11n model and CPU inference. Keep **Require custom thrown_object class** off with this model. Select **both** to detect inward and outward crossings. Enable test-mode labels for controlled trials. Unknown crossings normally alert; the optional silent-review checkbox saves them without sound/banner and can also silence real throws.
 4. Connect the camera again. Check the AI status on the tile and in Devices. Warmup, overload and model failures are visible. A failed AI worker leaves the video view available but cannot generate detection alerts.
 5. Review alerts and snapshots in **Alarms**, add an acknowledgment note and export events/trajectories if needed.
+
+A person near the fence is a separate warning. Nearby-person context increases the review priority of an actual measured crossing, without claiming intent or a probability. See [perimeter rules and bird filtering](PERIMETER_ANALYTICS.md).
 
 AI concurrency defaults to two cameras to avoid starting many large inference workers accidentally. Increase it only after measuring frame loss, delay and CPU/RAM use on the server. The packaged build is CPU-based. GPU deployment requires a source installation with a suitable PyTorch/CUDA runtime; entering `0` in this CPU package does not install GPU support.
 
@@ -81,6 +84,7 @@ Stop all cameras before changing storage/processing limits or updating the progr
 | Analogue-only camera | Requires a compatible DVR/encoder. |
 | Cloud/P2P-only camera or proprietary encrypted stream | Requires a supported local RTSP/ONVIF mode or vendor integration; not automatically supported. |
 | Recordings already stored inside an NVR | Not searched by this release; use the vendor VMS/NVR for historical playback. |
-| PTZ, talkback, relay control, mobile/cloud access, operator roles/failover | Not implemented in this release. |
+| Named local operators | Administrator/operator login and action permissions; Windows file permissions remain the security boundary. |
+| PTZ, talkback, relay control, mobile/cloud access, server failover | Not implemented in this release. |
 
 This client has not completed ONVIF conformance certification. Supporting selected ONVIF operations does not imply complete Profile S/T/G conformance or universal device compatibility.

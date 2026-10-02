@@ -12,7 +12,10 @@ class VMSDesktopTests(unittest.TestCase):
     def setUp(self):
         from jailwatch.vms.ui import VMSApp
         self.tmp = tempfile.TemporaryDirectory()
-        self.app = VMSApp(self.tmp.name)
+        from jailwatch.vms.auth import AuthStore
+        self.auth=AuthStore(self.tmp.name)
+        self.session=self.auth.bootstrap("admin","A local test passphrase")
+        self.app = VMSApp(self.tmp.name,auth=self.auth,session=self.session)
         self.app.update()
 
     def tearDown(self):
@@ -89,3 +92,70 @@ class VMSDesktopTests(unittest.TestCase):
         finally:
             player.close()
             player.worker.join(timeout=3)
+
+    def test_operator_can_review_but_cannot_edit_devices(self):
+        self.auth.create_account(self.session,'operator','Operator test passphrase')
+        self.app.session=self.auth.authenticate('operator','Operator test passphrase')
+        with patch('jailwatch.vms.ui.messagebox.showerror') as error, patch('jailwatch.vms.ui.CameraDialog') as dialog:
+            self.app.add_camera()
+            error.assert_called_once(); dialog.assert_not_called()
+        self.app.test_alarm()
+        self.assertEqual(len(self.app.events.list()),1)
+
+    def test_silent_review_cannot_hide_an_older_real_alarm(self):
+        from jailwatch.rules import Candidate
+        self.app.test_alarm()
+        self.app.events.add(Candidate('suspected_throw',1,1,(.4,.4,.5,.5),[],'Silent review'),
+                            'Wall','run',details={'notify':False,'direction':'inside_to_outside'})
+        self.app.refresh_alarms()
+        self.assertIn('SYSTEM TEST',self.app.alarm_banner.cget('text'))
+        rows=self.app.events.list()
+        self.assertEqual(self.app.alarm_tree.set(rows[0]['id'],'priority'),'Silent review')
+
+    def test_saved_cameras_reconnect_after_authenticated_open(self):
+        from jailwatch.vms.devices import Camera
+        from jailwatch.vms.ui import VMSApp
+        for name in ('North','South'):
+            c=Camera(name=name); c.config.source='rtsp://192.0.2.1/test'
+            self.app.inventory.put(c)
+        self.app.manager.close(); self.app.after_cancel(self.app.poll_id); self.app.destroy()
+        session=self.auth.authenticate('admin','A local test passphrase')
+        with patch('jailwatch.vms.engine.MonitorManager.start') as start:
+            self.app=VMSApp(self.tmp.name,auth=self.auth,session=session)
+            end=time.monotonic()+.55
+            while time.monotonic()<end:
+                self.app.update(); time.sleep(.02)
+            self.assertEqual(start.call_count,2)
+            self.assertEqual(len(self.app.tiles),2)
+
+
+@unittest.skipUnless(sys.platform=='win32' or os.environ.get('DISPLAY'),'Desktop display unavailable')
+class LoginDesktopTests(unittest.TestCase):
+    def test_setup_then_login_opens_only_after_valid_credentials(self):
+        from jailwatch.vms.auth import AuthStore
+        from jailwatch.vms.login import LoginWindow
+        from jailwatch.vms.ui import VMSApp
+        with tempfile.TemporaryDirectory() as root:
+            auth=AuthStore(root)
+            with self.assertRaises(PermissionError): VMSApp(root)
+            login=LoginWindow(auth)
+            try:
+                login.update()
+                self.assertLessEqual(login.submit_button.winfo_y()+login.submit_button.winfo_height(),login.submit_button.master.winfo_height())
+                login.username.set('admin'); login.password.set('Login test passphrase'); login.confirm.set('Login test passphrase')
+                login.submit()
+                self.assertIsNotNone(login.session)
+            finally:
+                try: login.destroy()
+                except Exception: pass
+            auth.logout(login.session)
+            login=LoginWindow(auth)
+            try:
+                self.assertFalse(login.setup)
+                login.username.set('admin'); login.password.set('wrong'); login.submit()
+                self.assertIsNone(login.session)
+                login.password.set('Login test passphrase'); login.submit()
+                auth.require(login.session)
+            finally:
+                try: login.destroy()
+                except Exception: pass

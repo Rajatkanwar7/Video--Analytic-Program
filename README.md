@@ -1,83 +1,61 @@
-# JailWatch VMS 2.0 — CCTV monitoring and perimeter alerts
+# JailWatch VMS 2.1 — camera wall and perimeter alerts
 
-**Windows application:** [Download the latest verified EXE](https://github.com/Rajatkanwar7/Video--Analytic-Program/releases/latest). Open `JailWatchVMS-Setup-2.0.1-x64.exe` to install the application, Python runtime, CPU AI dependencies and default YOLO11n model. A portable ZIP is available in the same release.
+**[Download the Windows installer or portable ZIP](https://github.com/Rajatkanwar7/Video--Analytic-Program/releases/latest)** · **[Camera setup guide](docs/VMS_QUICKSTART.md)** · **[What the analytics decide](docs/PERIMETER_ANALYTICS.md)**
 
-The VMS adds a 1/4/9/16 camera grid, local device inventory, ONVIF discovery and Media1/Media2 stream lookup, manual RTSP connections, per-channel NVR/DVR entries, stream-copy recording, local playback/export, storage retention and central alarm review. Windows protects saved camera source URLs with the current user's DPAPI account protection.
+Install `JailWatchVMS-Setup-2.1.0-x64.exe`, open JailWatch, create your administrator account, then sign in to the camera wall. The EXE includes Python, the CPU AI runtime, FFmpeg and generic YOLO11n weights. A Python launcher or BAT file is not required. The portable ZIP must be extracted completely, including its `_internal` directory.
 
-**[VMS setup and camera compatibility guide](docs/VMS_QUICKSTART.md)** · **[Windows build instructions](docs/WINDOWS_BUILD.md)**
+This is a local Windows desktop VMS for a CCTV computer. GitHub distributes the application; it does not host camera feeds or start monitoring on your server.
 
-The VMS is a **pilot**, with up to 16 concurrent views and a configurable AI-camera limit. These limits do not establish server throughput. Actual cameras, codecs, network conditions and model accuracy need validation. It is not certified to work with every CCTV device or as a complete ONVIF Profile S/T/G client.
+## Operator workflow
 
-From source, run `python -m jailwatch vms`; `START_WINDOWS.bat` now opens the VMS. To use the earlier single-camera monitor and its existing local configuration, run `python -m jailwatch gui --config local/camera.json`.
+1. **Sign in.** First launch creates an administrator; there is no default password. Administrators can add operator accounts in Settings.
+2. **Add cameras.** Enter an IP and ONVIF login, choose an available stream, or enter a complete RTSP URL. Add one entry per NVR/DVR channel.
+3. **See the camera wall.** Choose 1, 4, 9 or 16 views. Saved cameras reconnect after sign-in when Auto connect is enabled. Each tile shows connection, AI, frame-loss and recording status.
+4. **Calibrate each camera.** Disconnect it, open AI zones and draw OUTSIDE and INSIDE. Optionally draw FENCE where a person's feet would appear near the fence, and IGNORE over irrelevant motion. Saving zones enables AI.
+5. **Select direction and alert policy.** Edit → AI settings supports both directions, inward only or outward only. New and upgraded VMS cameras default to both. Reconnect and run controlled tests.
+6. **Review evidence.** Alarms shows direction, review priority, snapshots and measured trajectories. Acknowledge events with a note or export CSV evidence.
 
-## Existing perimeter analytics
+## Included features
 
-A local desktop application for an RTSP IP camera or recorded video. It alerts on moving people in a configured inside zone and on small moving objects crossing from outside to inside. Recognized birds are filtered from crossing alerts.
+- Named administrator/operator sign-in, salted password hashes, persistent sign-in throttling and account disabling. No stored login sessions.
+- Up to 16 concurrent live views; inventory of 256 devices with grid pages. AI defaults to two simultaneous cameras and can be configured up to eight after a hardware benchmark.
+- ONVIF discovery and Media1/Media2 stream lookup, manual RTSP and recorded-video input.
+- Suspected small-object crossings **outside → inside and inside → outside**, with independent directional cooldowns.
+- Temporal visual bird/person checks on the event image and contextual crops. Recognized birds suppress throw notifications.
+- Separate sustained **person near fence** warning. A person near the observed launch area raises a crossing's review priority; it does not establish involvement or a probability of guilt.
+- Optional silent review of unclassified crossings; these remain in history without sound or an alarm banner. This option can also silence real throws.
+- Measured object/person paths and arrows; source-time coordinates and trajectory exports. No fabricated landing predictions or physical speed estimates.
+- Local stream-copy recording, playback, segment export, storage limits and stale-video indicators.
+- Asynchronous live AI, bounded queues, visible overload/model failures and reconnect handling.
+- Training-data checks, frame extraction, custom-model training and event-evaluation scripts.
 
-**Status: runnable pilot application.** A crossing alert is a **suspected throw**, not proof of a thrown item. A bird that the model fails to recognize can still cause an alarm. Detection accuracy on the supplied throwing events has not been established. See [validation](docs/VALIDATION.md).
+## What this release establishes
 
-## Start on Windows
+JailWatch remains a **pilot application**. Software tests verify rule behavior, authentication, concurrent workers, recording and packaged operation. They do not establish detection rates on your actual cameras, support for every CCTV device, ONVIF certification, or superiority over another VMS.
 
-1. Install **Python 3.11, 64-bit**, with pip and Tcl/Tk enabled. Select **Add python.exe to PATH**. The Python launcher is optional; Python 3.12, 64-bit is also supported.
-2. Download this repository using **Code → Download ZIP**, extract it, and run **INSTALL_WINDOWS.bat**. Internet is needed for packages and model weights.
-3. For the earlier single-camera interface, run `.venv\Scripts\python.exe -m jailwatch gui`. Open **Camera setup**, enter the RTSP URL or choose a video, and save settings. `START_WINDOWS.bat` opens the new VMS instead; follow the guide above for its device setup.
-4. Click **Preview and draw zones**. Mark the outside and inside sides of the wall. Save zones, return to **Monitor**, and press **Start monitoring**.
-5. Review red alerts in **Alarm history**. Open the snapshot, add a review note, and acknowledge the event.
+Birds can glide and briefly follow smooth trajectories. An object path alone cannot reliably distinguish them from a thrown item. The generic model can miss tiny birds or tiny packages. No newly trained jail-specific weights or measured field improvement are included. See [validation](docs/VALIDATION.md) and [training](docs/TRAINING.md).
 
-The program runs on the **CCTV/server computer**. The camera supplies its RTSP stream. Publishing code on GitHub does not start monitoring on the server or install software in the camera.
+Keep the application running for viewing, recording and alerts. Signing out or closing it stops this desktop session. Use Windows lock to secure the workstation while monitoring continues. There is no background recording service or server failover in this release.
 
-## Features
+## Install from source
 
-- Desktop live view, persistent on-screen alarm banner, optional system bell.
-- Live measured object/person trails with track IDs and direction arrows; saved path statistics and trajectory CSV export.
-- Live-test evidence labels, a separate operator test-alarm button, and saved session/throughput reports.
-- Optional custom `thrown_object` classification with an independent confidence threshold and a strict classification gate.
-- RTSP timeouts, automatic reconnect, visible connection and performance status.
-- Separate live AI worker, bounded review queue and visible overload warnings.
-- MP4/TS/AVI/MKV replay using video timestamps; headless batch processing.
-- Interactive normalized inside, outside and ignore zones; overlap and aspect-ratio checks.
-- Person movement confirmation, directional crossing tracks, cooldowns, warmup and scene-change handling.
-- Bird/person verification on the event image and recent contextual crops; missing AI stops monitoring visibly.
-- Local SQLite history, annotated snapshots, review notes, acknowledgments and CSV export.
-- Retention limits, local configuration, command-line diagnostics, automated logic/video tests and GitHub Actions configuration.
-- Optional custom-model training and event-evaluation scripts.
-- Frame extraction for human annotation, dataset/label checks, recording-group leakage checks, and held-out model evaluation.
-
-One source is monitored per application process. Use separate configuration files and processes for multiple cameras. This is a standalone application; it is not an i2V/VMS plug-in.
-
-## Commands
-
-Run from the extracted project folder. On Windows, use `.venv\Scripts\python.exe` in place of `python` after installation.
+Use Python 3.11 or 3.12, 64-bit, with pip and Tcl/Tk. On Windows run `INSTALL_WINDOWS.bat`, then `START_WINDOWS.bat`. The launcher handles Python on PATH or in common installation locations; the Python launcher is optional. Linux: `bash install_linux.sh` on a graphical desktop.
 
 ```bash
-python -m jailwatch gui
-python -m jailwatch doctor
-python -m jailwatch probe --config local/camera.json --frames 100
-python -m jailwatch run --config local/camera.json
+python -m jailwatch vms
 python -m unittest discover -s tests -v
+python -m jailwatch doctor
 ```
 
-Linux: install Python 3.11/3.12 with venv and Tk support, then run `bash install_linux.sh`. A graphical desktop is required for on-screen alarms. See [installation and deployment](docs/INSTALLATION.md).
+The advanced legacy monitor remains available as `python -m jailwatch gui --config local/camera.json`; headless replay uses `python -m jailwatch run --config local/camera.json`. Those developer interfaces rely on Windows/Linux account permissions rather than VMS operator login. Legacy JSON defaults retain inward-only crossing unless configured otherwise.
 
-## Detection approach and limits
+## Guides
 
-YOLO detects people and birds. Background subtraction and short tracks find candidate small-object crossings. A candidate must start outside, end inside, move far and fast enough, and pass bird/person filtering. The system does not identify faces, determine intent, or infer an unseen throwing action.
+- [IP/RTSP setup, recording and compatibility](docs/VMS_QUICKSTART.md)
+- [Accounts and local security boundary](docs/ACCOUNTS.md)
+- [Bidirectional crossings, birds and fence context](docs/PERIMETER_ANALYTICS.md)
+- [Live trials](docs/LIVE_TESTING.md), [training](docs/TRAINING.md), [validation](docs/VALIDATION.md)
+- [Windows build](docs/WINDOWS_BUILD.md), [source installation](docs/INSTALLATION.md), [configuration](docs/CONFIGURATION.md)
+- [Release notes](docs/RELEASE_NOTES_2.1.md)
 
-Trees, insects, shadows, occlusion, compression and camera movement can cause errors. If the object is invisible, crosses between analyzed frames, or never appears in the outside zone, the event may be missed. Validate each fixed camera view with known throws and bird-only footage before relying on alerts. Live frame loss and processing delay are displayed; replay can run slower without dropping decoded frames.
-
-The repository contains source and example settings. Camera credentials, recordings, original vendor configurations, model weights and event evidence are kept out of Git.
-
-## Further setup
-
-- [Installation, RTSP setup and troubleshooting](docs/INSTALLATION.md)
-- [Live testing, trajectory display and session reports](docs/LIVE_TESTING.md)
-- [GitHub download and update instructions](docs/GITHUB.md)
-- [Configuration and threshold tuning](docs/CONFIGURATION.md)
-- [What was tested and camera validation](docs/VALIDATION.md)
-- [Custom model training](docs/TRAINING.md)
-
-Version 1.1 adds software features and training tools. No new jail-specific model weights or measured improvement in field accuracy are included. The live paths show observations in the image, not predicted landing points or physical speed.
-
-## Dependencies
-
-This repository retains its existing MIT license for the application code. Third-party packages and model weights have their own terms. Ultralytics describes YOLO11 licensing on its [official model page](https://docs.ultralytics.com/models/yolo11/). Its [prediction API](https://docs.ultralytics.com/modes/predict/) and [threading guidance](https://docs.ultralytics.com/guides/yolo-thread-safe-inference/) inform the detector integration. Video capture uses [OpenCV](https://docs.opencv.org/4.13.0/d8/dfe/classcv_1_1VideoCapture.html).
+Camera logins, recordings, real incident evidence and private vendor configurations are excluded from Git. Windows protects saved camera URLs with current-user DPAPI. Application code retains its MIT license; packages and model weights have their own [third-party terms](docs/THIRD_PARTY.md).

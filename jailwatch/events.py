@@ -47,7 +47,7 @@ class EventStore:
     def add(self, candidate, camera, run_id, image=None, details=None):
         event_id = uuid.uuid4().hex
         snapshot = ""
-        extra = dict(details or {})
+        extra = {**candidate.context, "direction": candidate.direction, **(details or {})}
         extra["trajectory"] = candidate.trajectory
         extra["box"] = list(candidate.box)
         extra["track_id"] = candidate.track_id
@@ -68,8 +68,13 @@ class EventStore:
             raise
         return event_id
 
-    def list(self, limit=300, unacknowledged=False):
-        where = " WHERE acknowledged_utc IS NULL" if unacknowledged else ""
+    def list(self, limit=300, unacknowledged=False, notifications_only=False):
+        conditions = []
+        if unacknowledged:
+            conditions.append("acknowledged_utc IS NULL")
+        if notifications_only:
+            conditions.append("COALESCE(json_extract(details,'$.notify'),1)=1")
+        where = " WHERE " + " AND ".join(conditions) if conditions else ""
         with self.connect() as db:
             return [dict(r) for r in db.execute(
                 "SELECT * FROM events" + where + " ORDER BY created_utc DESC, rowid DESC LIMIT ?", (limit,))]
@@ -106,9 +111,11 @@ class EventStore:
             return "'" + text if text.lstrip().startswith(("=", "+", "-", "@")) else text
         with self.connect() as db, Path(path).open("w", newline="", encoding="utf-8-sig") as out:
             writer = csv.writer(out)
-            writer.writerow(columns)
+            extra_columns = ["direction", "priority", "notify", "classification", "nearby_person", "visual_review_frames"]
+            writer.writerow(columns + extra_columns)
             for row in db.execute("SELECT * FROM events ORDER BY created_utc,rowid"):
-                writer.writerow([safe(row[c]) for c in columns])
+                details = json.loads(row["details"])
+                writer.writerow([safe(row[c]) for c in columns] + [safe(details.get(c,"")) for c in extra_columns])
 
     def export_trajectories(self, path, ids):
         """Export selected saved paths; old events without image size retain normalized coordinates."""

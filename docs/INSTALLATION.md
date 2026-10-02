@@ -13,7 +13,7 @@ GitHub distributes the source. GitHub Pages cannot run this desktop application 
 1. Install Python 3.11 **64-bit** from [python.org](https://www.python.org/downloads/), including pip and **tcl/tk and IDLE**. Select **Add python.exe to PATH**. You can leave **py launcher** unselected if that option is unavailable. Python 3.12 **64-bit** is also supported.
 2. Extract the repository into a writable folder such as `C:\JailWatch`. Use a local drive for the SQLite database.
 3. Run `INSTALL_WINDOWS.bat`. It creates a virtual environment, installs CPU dependencies, downloads YOLO11n and runs software tests. It stops on errors.
-4. Open `START_WINDOWS.bat` to launch VMS. Click **Add device**, enter the device IP and ONVIF login, then choose a stream. Alternatively use the RTSP / video file tab.
+4. Open `START_WINDOWS.bat` to launch VMS. Create an administrator or sign in, then click **Add device**, enter the device IP and ONVIF login, then choose a stream. Alternatively use the RTSP / video file tab.
 5. Save the camera, click **AI zones**, draw outside and inside polygons, and save.
 6. Click **Connect** and check the image, zone direction, processing rate and alarm history. To use the earlier single-camera interface instead, run `.venv\Scripts\python.exe -m jailwatch gui`.
 

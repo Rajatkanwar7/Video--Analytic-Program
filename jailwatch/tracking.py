@@ -21,8 +21,11 @@ class Track:
     id: int
     history: deque = field(default_factory=lambda: deque(maxlen=100))
     outside_start: Observation | None = None
+    origin_side: str = ""
     fired: bool = False
     person_start: Observation | None = None
+    fence_start: Observation | None = None
+    fence_fired: bool = False
 
 
 class Tracker:

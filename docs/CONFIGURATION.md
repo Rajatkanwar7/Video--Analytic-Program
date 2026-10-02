@@ -65,3 +65,7 @@ Existing version-1 camera files remain valid; the new fields use defaults when a
 | `require_object_class` | `false` | Require a custom `thrown_object` match before emitting a crossing alert; still suppress recognized birds/people. |
 
 Stop monitoring before changing the on-screen options. Generic weights do not support the strict class requirement. See [live testing](LIVE_TESTING.md) and [training](TRAINING.md).
+
+## VMS 2.1 perimeter fields
+
+`crossing_direction`: `both`, `outside_to_inside` or `inside_to_outside`. New/upgraded VMS inventory cameras default to `both`; legacy Config JSON defaults to inward only. `fence_zone` is an optional normalized polygon for foot occupancy, allowed to overlap inside/outside. `fence_dwell_seconds` defaults to 2, `person_context_seconds` to 3 and `launch_person_distance` to 0.12 in image coordinates. `unknown_crossing_policy` is `alert` (default) or `review` (save silently). `require_object_class` still takes precedence and suppresses unknown candidates completely. See [decision behavior](PERIMETER_ANALYTICS.md).

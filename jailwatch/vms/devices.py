@@ -133,7 +133,7 @@ class Camera:
     name: str = "New camera"
     group: str = "Default"
     analytics: bool = False
-    config: Config = field(default_factory=lambda: Config(model=bundled_model()))
+    config: Config = field(default_factory=lambda: Config(model=bundled_model(), crossing_direction="both"))
 
     def validate(self):
         if not re.fullmatch(r"[a-f0-9]{32}", self.id):
@@ -155,6 +155,7 @@ class Preferences:
     max_live: int = 16
     max_analytics: int = 2
     beep: bool = True
+    auto_connect: bool = True
 
     def validate(self):
         for key, low, high in [("retention_days",1,365),("quota_gb",1,100000),
@@ -164,6 +165,8 @@ class Preferences:
                 raise ValueError(f"{key} must be a whole number between {low} and {high}.")
         if type(self.beep) is not bool:
             raise ValueError("Sound must be enabled or disabled.")
+        if type(self.auto_connect) is not bool:
+            raise ValueError("Auto connect must be enabled or disabled.")
 
 
 class Inventory:
@@ -181,6 +184,8 @@ class Inventory:
             self.preferences.validate()
             for record in raw["cameras"]:
                 config = record["config"]
+                # Existing VMS views gain the requested bidirectional monitoring.
+                config.setdefault("crossing_direction", "both")
                 config["source"] = protect(config.pop("source_protected"), decrypt=True)
                 camera = Camera(**{**record,"config":Config(**config)})
                 # Missing local videos do not prevent opening the inventory to repair their path.

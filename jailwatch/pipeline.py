@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 
 from .capture import VideoSource
-from .detector import YoloDetector, verify_track
+from .detector import YoloDetector, verify_track, temporal_bird_match
 from .geometry import contains
 from .rules import RuleEngine
 from .trajectory import draw_trail, trajectory_stats, visible_trails
@@ -71,6 +71,7 @@ class Pipeline:
         self.frame_gaps = 0
         # Keep contextual crops, not full-resolution video, for exact-time verification.
         self.samples = {}
+        self.bird_observations = deque(maxlen=256)
         self.processed = 0
         self.started = time.monotonic()
         self.last_prune = 0.0
@@ -83,6 +84,7 @@ class Pipeline:
         self.motion.reset()
         self.first_time = timestamp
         self.samples.clear()
+        self.bird_observations.clear()
         self.last_semantic = -1e20
         self.last_submit = -1e20
         self.detections = []
@@ -130,10 +132,13 @@ class Pipeline:
             else:
                 events += self._semantic_result(self.detector.predict(image), t, image)
         for candidate in candidates:
-            if not self.rules.permitted(candidate.kind, t):
+            if not self.rules.permitted(candidate.cooldown_key, t):
                 continue
             samples = list(self.samples.get(candidate.track_id, []))
-            samples = samples[::max(1, len(samples) // 3)][:3]
+            samples = [s for s in samples if candidate.trajectory[0][0] <= s[0] < candidate.source_time]
+            if len(samples) > 5:
+                samples = [samples[round(i*(len(samples)-1)/4)] for i in range(5)]
+            candidate.context["visual_review_frames"] = 1+len(samples)
             if self.live_ai:
                 self.live_ai.submit_candidate(self.generation, candidate, image, samples)
                 continue
@@ -151,16 +156,20 @@ class Pipeline:
 
     def _semantic_result(self, detections, timestamp, image):
         self.detections, self.last_semantic = detections, timestamp
+        self.bird_observations.extend((timestamp,d.box) for d in detections if d.label == "bird")
         events = []
         if timestamp - self.first_time >= self.config.warmup_seconds:
             people = [d.box for d in detections if d.label == "person"]
             for candidate in self.rules.person_movement(people, timestamp):
-                event = self._emit(candidate, image, {"classification": "person"})
+                event = self._emit(candidate, image, {"classification": "person", "priority": "attention",
+                                                     "notify": True})
                 if event:
                     events.append(event)
         return events
 
     def _candidate_result(self, candidate, image, label):
+        if temporal_bird_match(candidate.trajectory, self.bird_observations):
+            label = "bird"
         self.track_labels[candidate.track_id] = label or "motion"
         if label == "bird":
             self.suppressed_birds += 1
@@ -169,10 +178,17 @@ class Pipeline:
         elif self.config.require_object_class and label != "thrown_object":
             self.suppressed_unknown += 1
         else:
+            context = self.rules.person_context(candidate)
+            candidate.context.update(context)
+            notify = label == "thrown_object" or self.config.unknown_crossing_policy == "alert"
+            candidate.context["priority"] = "elevated" if context.get("nearby_person") else "review"
+            if context.get("nearby_person"):
+                candidate.message += " Person observed near fence and launch area; involvement unconfirmed."
             return self._emit(candidate, image, {
                 "classification": "thrown_object" if label == "thrown_object" else "unknown moving object",
                 "custom_object_match": label == "thrown_object", "bird_filter": "no bird recognized",
-                "review_required": True})
+                "review_required": True, "notify": notify,
+                "decision": "notify for operator review" if notify else "unknown crossing saved for silent review"})
         return None
 
     def _drain_ai(self):
@@ -198,32 +214,37 @@ class Pipeline:
             if track.history[-1].time != timestamp or track.outside_start is None:
                 continue
             last = track.history[-1]
-            trail = self.samples.setdefault(key, deque(maxlen=6))
+            trail = self.samples.setdefault(key, deque())
+            while trail and trail[0][0] < track.outside_start.time:
+                trail.popleft()
             if trail and timestamp - trail[-1][0] < 0.1:
                 continue
             cx, cy = last.point
-            # Bounded at 128 tracks x 6 crops x 256x256x3 bytes; typically much smaller.
+            # Keep the launch sample and the latest eleven crops; <=288 MiB at 128 tracks.
             x1, y1 = max(0, int(cx * w) - 128), max(0, int(cy * h) - 128)
             x2, y2 = min(w, x1 + 256), min(h, y1 + 256)
             box = tuple((v * (w if i % 2 == 0 else h) - (x1 if i % 2 == 0 else y1)) /
                         ((x2 - x1) if i % 2 == 0 else (y2 - y1)) for i, v in enumerate(last.box))
             trail.append((timestamp, image[y1:y2, x1:x2].copy(), box))
+            if len(trail) > 12:
+                del trail[1]
 
     def _emit(self, candidate, image, details):
-        if not self.rules.permitted(candidate.kind, candidate.source_time):
+        if not self.rules.permitted(candidate.cooldown_key, candidate.source_time):
             return None
         evidence = image.copy()
         self._draw_candidate(evidence, candidate)
-        details = {**details, "test_mode": self.config.test_mode,
+        details = {**candidate.context, **details, "direction": candidate.direction, "test_mode": self.config.test_mode,
                    "image_size": [image.shape[1],image.shape[0]],
                    "trajectory_statistics": trajectory_stats(candidate.trajectory,[image.shape[1],image.shape[0]])}
         if self.config.test_mode:
             cv2.putText(evidence,"LIVE TEST",(12,58),cv2.FONT_HERSHEY_SIMPLEX,.65,(255,180,80),2)
         event_id = self.store.add(candidate, self.config.camera_name, self.run_id, evidence, details)
-        self.rules.emitted(candidate.kind, candidate.source_time)
+        self.rules.emitted(candidate.cooldown_key, candidate.source_time)
         self.event_counts[candidate.kind] += 1
         return {"id": event_id, "kind": candidate.kind, "source_time": candidate.source_time,
-                "message": candidate.message, "run_id": self.run_id, "test_mode": self.config.test_mode}
+                "message": candidate.message, "run_id": self.run_id, "test_mode": self.config.test_mode,
+                "direction": candidate.direction, "notify": details.get("notify",True), "details": details}
 
     def _prune(self, t):
         now = time.monotonic()
@@ -239,12 +260,16 @@ class Pipeline:
         points = np.array([(int(x*w), int(y*h)) for _, x, y in candidate.trajectory], np.int32)
         if len(points) >= 2:
             draw_trail(image,candidate.trajectory,(20,190,255),f"Track #{candidate.track_id}",candidate.box)
-        cv2.putText(image, candidate.kind.upper(), (12, 30), cv2.FONT_HERSHEY_SIMPLEX, .7, (20, 40, 255), 2)
+        title = candidate.direction.replace('_',' ').upper() if candidate.direction else candidate.kind.upper()
+        cv2.putText(image, title, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, .65, (20, 40, 255), 2)
 
     def annotate(self, image, timestamp, events):
         h, w = image.shape[:2]
         for name, zone, color in (("OUTSIDE", self.config.outside_zone, (0, 190, 255)),
-                                  ("INSIDE", self.config.inside_zone, (90, 220, 80))):
+                                  ("INSIDE", self.config.inside_zone, (90, 220, 80)),
+                                  ("FENCE WATCH", self.config.fence_zone, (220,160,255))):
+            if not zone:
+                continue
             points = np.array([(int(x*w), int(y*h)) for x, y in zone], np.int32)
             cv2.polylines(image, [points], True, color, 2)
             cv2.putText(image, name, tuple(points[0]), cv2.FONT_HERSHEY_SIMPLEX, .6, color, 2)
@@ -266,6 +291,7 @@ class Pipeline:
                 cv2.rectangle(image, (int(x1*w), int(y1*h)), (int(x2*w), int(y2*h)), color, 2)
                 cv2.putText(image, f"{d.label} {d.confidence:.2f}", (int(x1*w), max(15, int(y1*h)-5)),
                             cv2.FONT_HERSHEY_SIMPLEX, .5, color, 1)
+        events = [event for event in events if event.get("notify",True)]
         if events:
             cv2.rectangle(image, (0, h-45), (w, h), (25, 35, 200), -1)
             cv2.putText(image, events[-1]["kind"].upper(), (12, h-15),

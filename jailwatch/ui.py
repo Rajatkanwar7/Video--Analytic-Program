@@ -33,10 +33,11 @@ class ZoneEditor(tk.Toplevel):
         self.photo = ImageTk.PhotoImage(rgb)
         self.zone = tk.StringVar(value="outside")
         self.polygons = {"outside": list(config.outside_zone), "inside": list(config.inside_zone),
-                         "ignore": list(config.ignore_zones[0]) if config.ignore_zones else []}
+                         "ignore": list(config.ignore_zones[0]) if config.ignore_zones else [],
+                         "fence": list(config.fence_zone)}
         # Additional ignore polygons in manually edited configs are preserved.
         self.extra_ignore = config.ignore_zones[1:]
-        self.colors = {"outside": "#ffc55b", "inside": "#56ddad", "ignore": "#b795ff"}
+        self.colors = {"outside": "#ffc55b", "inside": "#56ddad", "ignore": "#b795ff", "fence": "#f095d2"}
         ttk.Label(self, text="Select a zone, then click its corners. Draw OUTSIDE and INSIDE on the correct sides of the wall.",
                   padding=12).pack()
         bar = ttk.Frame(self, padding=(12, 0, 12, 8)); bar.pack(fill="x")
@@ -47,7 +48,7 @@ class ZoneEditor(tk.Toplevel):
         self.canvas = tk.Canvas(self, width=self.width, height=self.height, highlightthickness=0)
         self.canvas.pack(padx=12)
         self.canvas.bind("<Button-1>", self.add)
-        ttk.Label(self, text="Zones cannot overlap. Leave a narrow gap over the wall. Ignore zones exclude vegetation or overlays.",
+        ttk.Label(self, text="INSIDE / OUTSIDE must not overlap. FENCE is optional: mark where people stand near the fence on either side.",
                   padding=10).pack()
         ttk.Button(self, text="Save zones", command=self.save).pack(pady=(0, 12))
         self.redraw()
@@ -85,6 +86,7 @@ class ZoneEditor(tk.Toplevel):
         c = self.config_copy
         c.outside_zone, c.inside_zone = self.polygons["outside"], self.polygons["inside"]
         c.ignore_zones = ([self.polygons["ignore"]] if self.polygons["ignore"] else []) + self.extra_ignore
+        c.fence_zone = self.polygons["fence"]
         c.calibration_size = self.original_size
         try:
             c.validate()
@@ -419,7 +421,7 @@ class App(tk.Tk):
                 kind = m["type"]
                 if kind == "event":
                     self.refresh_history()
-                    if self.settings.beep and time.monotonic() - self.last_bell > 1:
+                    if m.get("notify",True) and self.settings.beep and time.monotonic() - self.last_bell > 1:
                         self.bell(); self.last_bell = time.monotonic()
                 elif kind == "session":
                     mode = "LIVE TEST" if m["test_mode"] else "MONITORING"
@@ -480,7 +482,7 @@ class App(tk.Tk):
         for sid in selected:
             if sid in self.history_rows:
                 self.table.selection_add(sid)
-        outstanding = self.store.list(limit=1, unacknowledged=True)
+        outstanding = self.store.list(limit=1, unacknowledged=True, notifications_only=True)
         if outstanding:
             r = outstanding[0]
             self.alarm_var.set(f"ALERT  ·  {r['camera']}  ·  {r['kind'].replace('_', ' ').upper()} — Open Alarm history to review")

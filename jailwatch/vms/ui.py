@@ -13,6 +13,7 @@ import time
 import tkinter as tk
 import uuid
 from pathlib import Path
+from functools import wraps
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from PIL import Image, ImageTk
@@ -22,6 +23,8 @@ from jailwatch.events import EventStore
 from jailwatch.rules import Candidate
 from .devices import Camera, DataLock, Inventory, Preferences, bundled_model, data_home, redacted_source, stream_url
 from .engine import MonitorManager
+from .auth import AuthStore
+from .login import LoginWindow, manage_accounts, change_password
 from .recording import RecordingStore
 
 BG = "#0c121c"
@@ -32,6 +35,21 @@ ACCENT = "#32b7c9"
 GREEN = "#53d4a0"
 AMBER = "#ffcb70"
 RED = "#ff7b86"
+
+
+def access(admin=False):
+    """Enforce session/role at action entry, not merely by hiding a button."""
+    def decorate(method):
+        @wraps(method)
+        def guarded(self, *args, **kwargs):
+            try:
+                self.auth.require(self.session, admin=admin)
+            except PermissionError as exc:
+                messagebox.showerror("Account access",str(exc),parent=self)
+                return
+            return method(self,*args,**kwargs)
+        return guarded
+    return decorate
 
 
 def open_folder(path):
@@ -96,6 +114,7 @@ class Toolbar(ttk.Frame):
 
 class CameraDialog(tk.Toplevel):
     def __init__(self, app, camera=None, endpoint=""):
+        app.auth.require(app.session,admin=True)
         super().__init__(app)
         self.app = app
         self.camera = copy.deepcopy(camera) if camera else Camera()
@@ -165,6 +184,18 @@ class CameraDialog(tk.Toplevel):
         ttk.Label(analytic,text="Add the camera first, then use AI zones to draw its perimeter and enable alerts.\n"
                   "The default model filters recognized birds; it cannot guarantee zero false alarms.",
                   style="Muted.TLabel",wraplength=570).grid(row=9,column=0,columnspan=2,sticky="w",pady=12)
+        self.direction = tk.StringVar(value=self.camera.config.crossing_direction)
+        ttk.Label(analytic,text="Crossing direction").grid(row=10,column=0,sticky="w",pady=6)
+        ttk.Combobox(analytic,textvariable=self.direction,values=("both","outside_to_inside","inside_to_outside"),
+                     state="readonly").grid(row=10,column=1,sticky="ew")
+        self.fence_dwell = tk.StringVar(value=str(self.camera.config.fence_dwell_seconds))
+        field(analytic,"Fence dwell (seconds)",self.fence_dwell,11)
+        self.silent_unknown = tk.BooleanVar(value=self.camera.config.unknown_crossing_policy=="review")
+        ttk.Checkbutton(analytic,text="Save unknown crossings silently for review",variable=self.silent_unknown).grid(
+            row=12,column=0,columnspan=2,sticky="w",pady=8)
+        ttk.Label(analytic,text="Recognized birds never create throw alerts. Silent review reduces alarms but can silence real throws. "
+                  "Fence warnings need the optional FENCE zone. A nearby person raises review priority, not certainty.",
+                  style="Muted.TLabel",wraplength=560).grid(row=13,column=0,columnspan=2,sticky="w",pady=8)
         bottom = ttk.Frame(outer); bottom.pack(fill="x")
         ttk.Button(bottom,text="Cancel",command=self.destroy).pack(side="right")
         self.save_button = ttk.Button(bottom,text="Save camera",style="Accent.TButton",command=self.save)
@@ -216,6 +247,7 @@ class CameraDialog(tk.Toplevel):
 
     def save(self):
         try:
+            self.app.auth.require(self.app.session,admin=True)
             use_onvif = self.connection_mode==0
             source = self.source.get().strip()
             if use_onvif:
@@ -251,7 +283,7 @@ class CameraDialog(tk.Toplevel):
             camera.analytics = self.ai_enabled.get()
             if source != camera.config.source:
                 camera.config.inside_zone = []; camera.config.outside_zone = []; camera.config.ignore_zones = []
-                camera.config.calibration_size = []
+                camera.config.calibration_size = []; camera.config.fence_zone = []
                 camera.analytics = False
             camera.config.source,camera.config.source_env = source,""
             camera.config.model,camera.config.device = self.model.get().strip(),self.device.get().strip()
@@ -259,18 +291,27 @@ class CameraDialog(tk.Toplevel):
             camera.config.test_mode = self.test_mode.get()
             camera.config.show_trajectories = self.trails.get()
             camera.config.require_object_class = self.strict.get()
+            camera.config.crossing_direction = self.direction.get()
+            camera.config.unknown_crossing_policy = "review" if self.silent_unknown.get() else "alert"
+            camera.config.fence_dwell_seconds = float(self.fence_dwell.get())
             self.app.inventory.put(camera)
             self.app.refresh_devices()
             self.app.select_camera(camera.id)
             self.destroy()
-        except (ValueError,OSError,TypeError) as exc:
+        except (ValueError,OSError,TypeError,PermissionError) as exc:
             messagebox.showerror("Camera settings",str(exc),parent=self)
 
 
 class VMSApp(tk.Tk):
-    def __init__(self, root=None, factory=None):
+    def __init__(self, root=None, factory=None, *, auth=None, session=None):
+        if auth is None or auth.root != Path(root or data_home()).resolve():
+            raise PermissionError("Sign in to this VMS data folder before opening cameras.")
+        auth.require(session)
+        self.auth, self.session = auth, session
+        self.sign_out_requested = False
+        self.last_session_check = 0
         super().__init__()
-        self.title("JailWatch VMS 2.0.1 | Control room")
+        self.title("JailWatch VMS 2.1.0 | Control room")
         width = min(1380,self.winfo_screenwidth()-32)
         height = min(850,self.winfo_screenheight()-120)
         self.geometry(f"{width}x{height}+16+16")
@@ -297,6 +338,8 @@ class VMSApp(tk.Tk):
         self.bind("<F11>",lambda e: self.attributes("-fullscreen",not self.attributes("-fullscreen")))
         self.bind("<Escape>",lambda e: self.attributes("-fullscreen",False))
         self.poll_id = self.after(100,self.poll)
+        if self.inventory.cameras and self.inventory.preferences.auto_connect:
+            self.after(300,self.start_all)
 
     def _style(self):
         style = ttk.Style(self); style.theme_use("clam")
@@ -332,6 +375,10 @@ class VMSApp(tk.Tk):
             button = tk.Button(sidebar,text=name,command=lambda n=name: self.show_page(n),anchor="w",relief="flat",
                 borderwidth=0,bg="#101a28",fg=MUTED,activebackground="#243448",activeforeground=TEXT,font=("Segoe UI",11),padx=22,pady=14)
             button.pack(fill="x",padx=8,pady=3); self.nav[name] = button
+        tk.Button(sidebar,text="Sign out",command=lambda: self.close_app(sign_out=True),bg="#233149",fg=TEXT,
+                  relief="flat",pady=7).pack(side="bottom",fill="x",padx=16,pady=(0,12))
+        tk.Label(sidebar,text=f"{self.session.username}\n{self.session.role.upper()}",bg="#101a28",fg=ACCENT,
+                 anchor="w",justify="left",font=("Segoe UI",9)).pack(side="bottom",fill="x",padx=22,pady=8)
         self.side_status = tk.StringVar(value="LOCAL SYSTEM\n0 cameras connected")
         tk.Label(sidebar,textvariable=self.side_status,bg="#101a28",fg=MUTED,justify="left",anchor="w",
                  font=("Segoe UI",9)).pack(side="bottom",fill="x",padx=22,pady=24)
@@ -365,13 +412,13 @@ class VMSApp(tk.Tk):
         self.camera_combo = ttk.Combobox(bar,textvariable=self.camera_choice,state="readonly",width=28)
         self.camera_combo.pack(side="left",padx=12)
         self.camera_combo.bind("<<ComboboxSelected>>",lambda e: self.select_by_name())
-        self.layout = tk.StringVar(value="4")
+        self.layout = tk.StringVar(value=str(next((n for n in (4,9,16) if len(self.inventory.cameras)<=n),16)))
         layout = ttk.Combobox(bar,textvariable=self.layout,values=["1","4","9","16"],state="readonly",width=4)
         layout.pack(side="right"); layout.bind("<<ComboboxSelected>>",lambda e: self.rebuild_grid())
         ttk.Label(bar,text="Views",style="Muted.TLabel").pack(side="right",padx=8)
         self.live_controls = Toolbar(page,[("Connect",self.start_selected),("Disconnect",self.stop_selected),
                              ("Record",lambda: self.record_selected(True)),("Stop REC",lambda: self.record_selected(False)),
-                             ("Snapshot",self.snapshot_selected),("AI zones",self.draw_zones),("Edit",self.edit_camera)])
+                             ("Snapshot",self.snapshot_selected),("AI zones",self.draw_zones),("Edit",self.edit_camera),("Connect all",self.start_all)])
         self.live_controls.pack(fill="x",pady=(0,12))
         self.grid_frame = ttk.Frame(page)
         pager = ttk.Frame(page)
@@ -441,8 +488,8 @@ class VMSApp(tk.Tk):
         self.unreviewed = tk.BooleanVar()
         ttk.Checkbutton(bar,text="Unreviewed only",variable=self.unreviewed,command=self.refresh_alarms).pack(side="left",padx=12)
         ttk.Button(bar,text="View evidence",command=self.evidence).pack(side="right")
-        self.alarm_tree = self.tree(page,[("time","Created (UTC)",180),("camera","Camera",170),("kind","Event",180),
-                                        ("source","Source time",100),("review","Review",100)])
+        self.alarm_tree = self.tree(page,[("time","Created (UTC)",180),("camera","Camera",170),("kind","Event / direction",240),
+                                        ("source","Source time",90),("priority","Priority",100),("review","Review",100)])
         self.alarm_tree.bind("<Double-1>",lambda e: self.evidence())
         bottom = ttk.Frame(page); bottom.pack(side="bottom",fill="x",pady=(14,0))
         for text,command in [("Acknowledge selected",self.acknowledge),("Export all events",self.export_events),
@@ -462,6 +509,8 @@ class VMSApp(tk.Tk):
                   ("max_analytics","Simultaneous AI cameras (1–8)")]):
             self.preference_vars[key] = tk.StringVar(value=str(getattr(self.inventory.preferences,key)))
             field(form,label,self.preference_vars[key],row)
+        self.auto_connect = tk.BooleanVar(value=self.inventory.preferences.auto_connect)
+        ttk.Checkbutton(page,text="Reconnect saved cameras after sign-in",variable=self.auto_connect).pack(anchor="w",pady=8)
         self.sound = tk.BooleanVar(value=self.inventory.preferences.beep)
         ttk.Checkbutton(page,text="Sound the system bell for alerts",variable=self.sound).pack(anchor="w",pady=12)
         paragraph(page,text="Oldest completed VMS recordings are deleted when the retention or size limit is exceeded. "
@@ -469,6 +518,14 @@ class VMSApp(tk.Tk):
                   "Export evidence you need to retain. Stop cameras before changing these settings.",style="Muted.TLabel").pack(fill="x",pady=12)
         ttk.Button(page,text="Save settings",style="Accent.TButton",command=self.save_preferences).pack(anchor="w",pady=8)
         ttk.Separator(page).pack(fill="x",pady=22)
+        ttk.Label(page,text="Accounts",font=("Segoe UI",13,"bold")).pack(anchor="w")
+        accounts_bar = ttk.Frame(page); accounts_bar.pack(fill="x",pady=12)
+        ttk.Button(accounts_bar,text="Change my password",command=self.change_password).pack(side="left")
+        if self.session.role == "admin":
+            ttk.Button(accounts_bar,text="Manage operator accounts",command=self.manage_accounts).pack(side="left",padx=10)
+        paragraph(page,text="Signing out stops this desktop session's cameras, recording and alerts. "
+                  "Use Windows lock to secure an unattended workstation while monitoring continues.",style="Muted.TLabel").pack(fill="x",pady=8)
+        ttk.Separator(page).pack(fill="x",pady=18)
         ttk.Label(page,text="Application data",font=("Segoe UI",13,"bold")).pack(anchor="w")
         paragraph(page,text=str(self.inventory.root),style="Muted.TLabel").pack(fill="x",pady=8)
         buttons = ttk.Frame(page); buttons.pack(fill="x",pady=8)
@@ -478,6 +535,14 @@ class VMSApp(tk.Tk):
                   "The Windows EXE includes CPU AI and video dependencies. More cameras and higher resolutions require more processing capacity. "
                   "Check frame loss, AI delay and recording status on the actual CCTV computer. F11 toggles full screen.",
                   style="Muted.TLabel").pack(fill="x",pady=16)
+
+    @access(admin=True)
+    def manage_accounts(self):
+        manage_accounts(self)
+
+    @access()
+    def change_password(self):
+        change_password(self)
 
     def background(self, work, done, failed=None):
         def task():
@@ -507,9 +572,11 @@ class VMSApp(tk.Tk):
             if camera.name==self.camera_choice.get():
                 self.select_camera(camera.id); break
 
+    @access(admin=True)
     def add_camera(self):
         CameraDialog(self)
 
+    @access(admin=True)
     def edit_camera(self):
         try:
             camera = self.selected()
@@ -519,11 +586,13 @@ class VMSApp(tk.Tk):
         except ValueError as exc:
             messagebox.showinfo("Camera",str(exc),parent=self)
 
+    @access(admin=True)
     def edit_device_row(self):
         ids = self.device_tree.selection()
         if ids:
             self.select_camera(ids[0]); self.edit_camera()
 
+    @access()
     def health(self):
         ids = self.device_tree.selection()
         if not ids:
@@ -548,6 +617,7 @@ class VMSApp(tk.Tk):
             win.after(1000,update)
         update()
 
+    @access(admin=True)
     def remove_device(self):
         ids = self.device_tree.selection()
         if not ids:
@@ -560,12 +630,14 @@ class VMSApp(tk.Tk):
             self.inventory.remove(key)
         self.refresh_devices()
 
+    @access()
     def start_selected(self):
         try:
             self.manager.start(self.selected())
         except (ValueError,OSError) as exc:
             messagebox.showerror("Connect camera",str(exc),parent=self)
 
+    @access()
     def start_all(self):
         failures = []
         for camera in self.inventory.cameras:
@@ -574,12 +646,17 @@ class VMSApp(tk.Tk):
             except (ValueError,OSError) as exc:
                 failures.append(f"{camera.name}: {exc}")
         if failures:
+            self.notice.set("Some cameras could not connect. Check capacity and AI settings in Devices.")
             messagebox.showinfo("Camera connections","\n".join(failures[:10]),parent=self)
+        else:
+            self.notice.set("Camera connections requested. Check each tile for live video and AI status.")
 
+    @access()
     def stop_selected(self):
         if self.selected_id:
             self.manager.stop(self.selected_id)
 
+    @access()
     def record_selected(self, enabled):
         try:
             self.manager.set_recording(self.selected().id,enabled)
@@ -587,6 +664,7 @@ class VMSApp(tk.Tk):
         except ValueError as exc:
             messagebox.showinfo("Recording",str(exc),parent=self)
 
+    @access(admin=True)
     def draw_zones(self):
         try:
             camera = copy.deepcopy(self.selected())
@@ -601,12 +679,14 @@ class VMSApp(tk.Tk):
         def done(image):
             from jailwatch.ui import ZoneEditor
             def saved(config):
+                self.auth.require(self.session,admin=True)
                 camera.config = config; camera.analytics = True
                 self.inventory.put(camera); self.refresh_devices()
                 self.notice.set(f"{camera.name}: zones saved and AI enabled. Connect the camera to begin alerts.")
             ZoneEditor(self,image,camera.config,saved)
         self.background(work,done)
 
+    @access(admin=True)
     def discover(self):
         interface = simpledialog.askstring("ONVIF discovery","Optional local computer IPv4 address for the CCTV network adapter.\nLeave blank to use the default adapter.",parent=self)
         if interface is None:
@@ -630,6 +710,7 @@ class VMSApp(tk.Tk):
             ttk.Button(win,text="Add selected device",command=add).pack(pady=12)
         self.background(work,done)
 
+    @access(admin=True)
     def import_camera(self):
         path = filedialog.askopenfilename(parent=self,filetypes=[("JailWatch camera JSON","*.json")])
         if not path:
@@ -641,14 +722,16 @@ class VMSApp(tk.Tk):
                 config.model = str(candidate) if candidate.is_file() else bundled_model()
             camera = Camera(name=config.camera_name,config=config,analytics=bool(config.inside_zone and config.outside_zone))
             self.inventory.put(camera); self.refresh_devices(); self.select_camera(camera.id)
-        except (ValueError,OSError,TypeError) as exc:
+        except (ValueError,OSError,TypeError,PermissionError) as exc:
             messagebox.showerror("Import camera",str(exc),parent=self)
 
+    @access(admin=True)
     def export_inventory(self):
         path = filedialog.asksaveasfilename(parent=self,defaultextension=".json",initialfile="camera_names.json")
         if path:
             self.inventory.export_redacted(path)
 
+    @access()
     def snapshot_selected(self):
         try:
             camera = self.selected()
@@ -761,12 +844,14 @@ class VMSApp(tk.Tk):
         total = self.recordings.totals()
         self.storage_status.configure(text=f"{total['segments']} segments  ·  {total['bytes']/1024**3:.2f} GB stored  ·  {total['free_bytes']/1024**3:.1f} GB free")
 
+    @access()
     def play_recording(self):
         selected = self.record_tree.selection()
         if selected:
             from .playback import Playback
             Playback(self,self.recordings,self.record_rows[selected[0]])
 
+    @access()
     def export_recording(self):
         selected = self.record_tree.selection()
         if not selected:
@@ -783,18 +868,27 @@ class VMSApp(tk.Tk):
         self.alarm_rows = {r["id"]:r for r in rows}
         self.alarm_tree.delete(*self.alarm_tree.get_children())
         for r in rows:
+            details = json.loads(r["details"])
+            direction = details.get("direction","").replace("_"," ")
+            title = ("Suspected throw / "+direction) if direction else r["kind"].replace("_"," ")
+            priority = details.get("priority","review") if details.get("notify",True) else "Silent review"
             self.alarm_tree.insert("","end",iid=r["id"],values=(r["created_utc"][:19].replace("T"," "),r["camera"],
-                r["kind"].replace("_"," "),f"{r['source_time']:.2f}s","Reviewed" if r["acknowledged_utc"] else "NEW"))
+                title,f"{r['source_time']:.2f}s",priority,"Reviewed" if r["acknowledged_utc"] else "NEW"))
         for key in selected:
             if self.alarm_tree.exists(key):
                 self.alarm_tree.selection_add(key)
-        outstanding = self.events.list(limit=1,unacknowledged=True)
+        outstanding = self.events.list(limit=1,unacknowledged=True,notifications_only=True)
         if outstanding:
             last = outstanding[0]
-            self.alarm_banner.configure(text=f"ALERT  /  {last['camera']}  /  {last['kind'].replace('_',' ').upper()}  —  Click to review",bg="#582934",fg=TEXT)
+            detail = json.loads(last["details"])
+            direction = detail.get("direction","").replace("_"," ").upper()
+            title = direction or last["kind"].replace("_"," ").upper()
+            if detail.get("nearby_person"): title += " / PERSON NEAR LAUNCH"
+            self.alarm_banner.configure(text=f"ALERT  /  {last['camera']}  /  {title}  —  Click to review",bg="#582934",fg=TEXT)
         else:
             self.alarm_banner.configure(text="No unacknowledged alerts",bg=PANEL,fg=MUTED)
 
+    @access()
     def acknowledge(self):
         ids = self.alarm_tree.selection()
         if not ids:
@@ -803,6 +897,7 @@ class VMSApp(tk.Tk):
         if note is not None:
             self.events.acknowledge(ids,note); self.refresh_alarms()
 
+    @access()
     def evidence(self):
         ids = self.alarm_tree.selection()
         if not ids:
@@ -821,13 +916,17 @@ class VMSApp(tk.Tk):
         stats = details.get("trajectory_statistics",{})
         ttk.Label(win,text=f"{row['message']}\nCamera: {row['camera']}  |  Source time: {row['source_time']:.2f}s  |  Test: {details.get('test_mode',False)}\n"
                   f"Path samples: {stats.get('sample_count',0)}  |  Classification: {details.get('classification','system event')}\n"
+                  f"Direction: {details.get('direction','n/a')}  |  Priority: {details.get('priority','review')}  |  Notification: {details.get('notify',True)}\n"
+                  f"Nearby-person context: {details.get('meaning','No associated person established')}\n"
                   f"Review: {row['note'] or 'Not reviewed'}",wraplength=1080,padding=16).pack(anchor="w")
 
+    @access()
     def export_events(self):
         path = filedialog.asksaveasfilename(parent=self,defaultextension=".csv",initialfile="vms_alerts.csv")
         if path:
             self.events.export_csv(path)
 
+    @access()
     def export_trajectories(self):
         ids = self.alarm_tree.selection()
         if not ids:
@@ -839,6 +938,7 @@ class VMSApp(tk.Tk):
             except (ValueError,OSError) as exc:
                 messagebox.showerror("Trajectories",str(exc),parent=self)
 
+    @access()
     def test_alarm(self):
         self.events.add(Candidate("system_test",0,0,(0,0,0,0),[],"Operator test: no object was detected."),
                         "Control room",uuid.uuid4().hex,details={"test_only":True,"test_mode":True})
@@ -847,11 +947,12 @@ class VMSApp(tk.Tk):
             self.bell()
         self.notice.set("Test alarm created. Connect a camera with AI enabled to test real detection.")
 
+    @access(admin=True)
     def save_preferences(self):
         if any(w.thread.is_alive() for w in self.manager.workers.values()):
             messagebox.showinfo("Settings","Disconnect all cameras before changing settings.",parent=self); return
         try:
-            preferences = Preferences(**{k:int(v.get()) for k,v in self.preference_vars.items()},beep=self.sound.get())
+            preferences = Preferences(**{k:int(v.get()) for k,v in self.preference_vars.items()},beep=self.sound.get(),auto_connect=self.auto_connect.get())
             preferences.validate()
             previous = self.inventory.preferences
             self.inventory.preferences = preferences
@@ -865,6 +966,7 @@ class VMSApp(tk.Tk):
         except (ValueError,OSError) as exc:
             messagebox.showerror("Settings",str(exc),parent=self)
 
+    @access(admin=True)
     def download_model(self):
         self.notice.set("Downloading the default model from Ultralytics…")
         def work():
@@ -877,6 +979,13 @@ class VMSApp(tk.Tk):
     def poll(self):
         if self.closing:
             return
+        if time.monotonic()-self.last_session_check > 5:
+            try:
+                self.auth.require(self.session)
+            except (PermissionError,sqlite3.Error,OSError):
+                self.close_app(sign_out=True,force=True)
+                return
+            self.last_session_check = time.monotonic()
         try:
             while True:
                 done,result,error = self.jobs.get_nowait()
@@ -894,7 +1003,7 @@ class VMSApp(tk.Tk):
                 event = self.manager.messages.get_nowait()
                 if event["type"]=="event":
                     self.refresh_alarms()
-                    if self.inventory.preferences.beep and time.monotonic()-self.last_bell > 1:
+                    if event.get("notify",True) and self.inventory.preferences.beep and time.monotonic()-self.last_bell > 1:
                         self.bell(); self.last_bell = time.monotonic()
                 else:
                     self.notice.set(event["text"])
@@ -954,13 +1063,14 @@ class VMSApp(tk.Tk):
             self.last_tables = now
         self.poll_id = self.after(100,self.poll)
 
-    def close_app(self):
+    def close_app(self, sign_out=False, force=False):
         if self.closing:
             return
-        if any(self.manager.running(key) for key in self.manager.workers):
-            if not messagebox.askyesno("Close JailWatch VMS?",
-                    "Closing stops all live views, recording and detection alerts.\n\nClose the application?",parent=self):
+        if not force and any(self.manager.running(key) for key in self.manager.workers):
+            if not messagebox.askyesno("Sign out?" if sign_out else "Close JailWatch VMS?",
+                    "This stops all live views, recording and detection alerts.\n\nContinue?",parent=self):
                 return
+        self.sign_out_requested = sign_out
         self.closing = True
         self.after_cancel(self.poll_id)
         for child in self.winfo_children():
@@ -983,11 +1093,24 @@ class VMSApp(tk.Tk):
         await_close()
 
     def destroy(self):
+        if hasattr(self,"session"):
+            try:
+                self.auth.logout(self.session)
+            except (OSError,sqlite3.Error):
+                pass  # Storage failure must not prevent connections/windows closing.
         if hasattr(self,"data_lock"):
             self.data_lock.close()
         super().destroy()
 
 
 def launch(root=None):
-    app = VMSApp(root)
-    app.mainloop()
+    auth = AuthStore(root or data_home())
+    while True:
+        login = LoginWindow(auth)
+        login.mainloop()
+        if login.session is None:
+            break
+        app = VMSApp(root,auth=auth,session=login.session)
+        app.mainloop()
+        if not app.sign_out_requested:
+            break

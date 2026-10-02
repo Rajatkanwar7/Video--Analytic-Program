@@ -53,3 +53,42 @@ class ManagerTests(unittest.TestCase):
                 self.assertIn("FAILED",state["ai"])
             finally:
                 manager.close()
+
+    def test_two_ai_cameras_produce_separate_inward_and_outward_events(self):
+        import cv2,numpy as np,json
+        class Detector:
+            def __init__(self,_): pass
+            def predict(self,image): return []
+        with tempfile.TemporaryDirectory() as root:
+            events=EventStore(Path(root,"events"))
+            manager=MonitorManager(events,RecordingStore(root),Preferences(max_live=2,max_analytics=2),factory=Detector)
+            cameras=[]
+            for reverse in (False,True):
+                path=Path(root,f"direction-{reverse}.avi")
+                writer=cv2.VideoWriter(str(path),cv2.VideoWriter_fourcc(*"MJPG"),25,(640,360))
+                self.assertTrue(writer.isOpened())
+                for i in range(80):
+                    image=np.zeros((360,640,3),np.uint8)
+                    if 20<=i<=60:
+                        x=100+(i-20)*9
+                        if reverse: x=640-x
+                        image[170:180,x:x+10]=255
+                    writer.write(image)
+                writer.release()
+                c=config(); c.source=str(path); c.crossing_direction="both"
+                camera=Camera(name="Outward" if reverse else "Inward",config=c,analytics=True)
+                cameras.append(camera)
+            try:
+                for camera in cameras: manager.start(camera)
+                deadline=time.monotonic()+7
+                while time.monotonic()<deadline and len(events.list())<2:
+                    time.sleep(.05)
+                rows=events.list()
+                self.assertEqual(len(rows),2)
+                actual={r["camera"]:json.loads(r["details"]) for r in rows}
+                self.assertEqual(actual["Inward"]["direction"],"outside_to_inside")
+                self.assertEqual(actual["Outward"]["direction"],"inside_to_outside")
+                self.assertEqual({v["camera_id"] for v in actual.values()},{c.id for c in cameras})
+                self.assertTrue(all(v["notify"] for v in actual.values()))
+            finally:
+                manager.close()

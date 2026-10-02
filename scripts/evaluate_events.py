@@ -43,7 +43,10 @@ def main():
     p.add_argument("--labels", required=True, help="CSV with start_seconds,end_seconds")
     p.add_argument("--run-id", required=True, help="Replay run_id in the exported CSV")
     p.add_argument("--allow-empty-run", action="store_true", help="Explicitly confirm a completed run with zero exported alerts")
-    p.add_argument("--kind", default="suspected_throw", choices=["suspected_throw", "person_movement"])
+    p.add_argument("--kind", default="suspected_throw", choices=["suspected_throw", "person_movement", "person_near_fence"])
+    p.add_argument("--direction", default="all", choices=["all", "outside_to_inside", "inside_to_outside"],
+                   help="Filter events and labels; requires a direction column in both CSVs")
+    p.add_argument("--include-silent", action="store_true", help="Evaluate saved candidates as well as notifications")
     p.add_argument("--duration-seconds",type=float,help="Duration of the fully reviewed video/run for false alarms per hour")
     p.add_argument("--output",help="Save a JSON evaluation report")
     args = p.parse_args()
@@ -52,14 +55,24 @@ def main():
             rows = [r for r in csv.DictReader(f) if r["run_id"] == args.run_id]
         if not rows and not args.allow_empty_run:
             raise ValueError("No rows match run-id. Check the replay/export; use --allow-empty-run only for a confirmed completed zero-alert run.")
-        predictions = [float(r["source_time"]) for r in rows if r["kind"] == args.kind]
+        targets = [r for r in rows if r["kind"] == args.kind]
         with open(args.labels, encoding="utf-8-sig", newline="") as f:
-            intervals = [(float(r["start_seconds"]), float(r["end_seconds"])) for r in csv.DictReader(f)]
+            labels = list(csv.DictReader(f))
+        if args.direction != "all":
+            valid = {"outside_to_inside", "inside_to_outside"}
+            if any(r.get("direction") not in valid for r in targets+labels):
+                raise ValueError("Direction-specific evaluation requires valid direction values on every target event and label.")
+            targets = [r for r in targets if r["direction"] == args.direction]
+            labels = [r for r in labels if r["direction"] == args.direction]
+        silent = [r for r in targets if r.get("notify", "").strip().lower() in ("false", "0")]
+        predictions = [float(r["source_time"]) for r in targets if args.include_silent or r not in silent]
+        intervals = [(float(r["start_seconds"]), float(r["end_seconds"])) for r in labels]
         if any(not math.isfinite(v) or v < 0 for pair in intervals for v in pair):
             raise ValueError("Annotation times must be finite and nonnegative.")
         if any(start > end for start, end in intervals):
             raise ValueError("Each start time must be no later than its end time.")
-        result = {"run_id":args.run_id,"kind":args.kind,
+        result = {"run_id":args.run_id,"kind":args.kind,"direction":args.direction,
+                  "includes_silent":args.include_silent,"silent_candidates":len(silent),
                   **evaluate(predictions,intervals,args.duration_seconds)}
         print(json.dumps(result,indent=2))
         if args.output:

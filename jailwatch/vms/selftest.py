@@ -34,6 +34,8 @@ def run(destination, screenshot=None):
         from .onvif import envelope,DEVICE
         from .recording import ffmpeg_executable
         from .ui import VMSApp,CameraDialog
+        from .auth import AuthStore
+        from .login import LoginWindow
         def capture(window, name):
             window.update()
             ImageGrab.grab(bbox=(window.winfo_rootx(),window.winfo_rooty(),
@@ -70,7 +72,29 @@ def run(destination, screenshot=None):
                 from .rtsp_fixture import RtspFixture
                 input_source = stack.enter_context(RtspFixture(source))
                 report["loopback_rtsp"] = True
-            app = VMSApp(Path(root)/"vms")
+            auth=AuthStore(Path(root)/"vms")
+            first_login=LoginWindow(auth)
+            first_login.update()
+            if screenshot:
+                capture(first_login,Path(screenshot).with_name("vms-first-run.png"))
+            first_login.username.set("control-room")
+            first_login.password.set("Temporary self test passphrase")
+            first_login.confirm.set("Temporary self test passphrase")
+            first_login.submit()
+            if first_login.session is None:
+                raise RuntimeError("First-run administrator setup failed")
+            auth.logout(first_login.session)
+            login=LoginWindow(auth)
+            login.username.set("control-room")
+            login.update()
+            if screenshot:
+                capture(login,Path(screenshot).with_name("vms-login.png"))
+            login.password.set("Temporary self test passphrase")
+            login.submit()
+            if login.session is None:
+                raise RuntimeError("Named-operator sign-in failed")
+            report["first_run_and_login"] = True
+            app = VMSApp(Path(root)/"vms",auth=auth,session=login.session)
             stack.callback(close_app)
             app.update()
             if screenshot:

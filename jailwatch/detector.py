@@ -93,3 +93,22 @@ def verify_track(detector, image, box, samples):
     if "person" in labels:
         return "person"
     return "thrown_object" if "thrown_object" in labels else None
+
+
+def temporal_bird_match(trajectory, observations, radius=0.005):
+    """Match semantic bird sightings to the measured path at their own source time.
+
+    Never extrapolate a stale bird box onto another frame or infer species from an arc.
+    Only interpolate across short, continuously tracked intervals.
+    """
+    if len(trajectory) < 2:
+        return False
+    for timestamp, box in observations:
+        for a, b in zip(trajectory, trajectory[1:]):
+            if not a[0] <= timestamp <= b[0] or not 0 < b[0]-a[0] <= 0.3:
+                continue
+            fraction = (timestamp-a[0])/(b[0]-a[0])
+            x, y = a[1]+fraction*(b[1]-a[1]), a[2]+fraction*(b[2]-a[2])
+            if box[0]-radius <= x <= box[2]+radius and box[1]-radius <= y <= box[3]+radius:
+                return True
+    return False

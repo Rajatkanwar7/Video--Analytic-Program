@@ -2,6 +2,14 @@
 
 This separates implemented behavior from measured detection accuracy. No camera-specific detection rate or newly trained model is claimed.
 
+## Version 2.1 VMS validation
+
+New deterministic tests cover first-run enrollment, salted credentials, persistent lockout, session revocation, role enforcement, both crossing directions, independent cooldowns, fence dwell, launch-person time/space association, bird veto precedence and silent review. GUI tests cover the login gate, camera auto-connect and operator restrictions. Tests use temporary accounts and controlled/synthetic detections.
+
+The Windows EXE self-test now enrolls an administrator through the real setup form, signs out that temporary account and signs in through the real login form before opening four simulated RTSP streams. It also checks the packaged model, recording, playback and alarm display, including the installed copy. The current release's attached reports and workflow logs are the authoritative execution record.
+
+No new field recordings were labeled or neural-network weights trained for 2.1. Real-camera bidirectional recall, bird rejection, fence warning accuracy, notification latency under sustained multi-camera load and recording endurance remain unmeasured. Do not treat the software tests below as those measurements.
+
 ## Version 2.0 VMS validation
 
 The Linux development environment now supports OpenCV. The expanded suite covers concurrent camera workers, private device storage and its single-instance lock, local ONVIF Media1/Media2 SOAP fixtures, real FFmpeg recording and decoding, retention, and VMS desktop navigation. Windows/display cases run in CI.
@@ -86,3 +94,7 @@ python -m jailwatch run --config local/camera.json --max-frames 150
 ```
 
 `probe` checks decoding only. `run` needs model weights and calibrated zones. A successful run without an alert is not evidence that the clip contains no incident.
+
+### Direction and audible notification evaluation (2.1)
+
+Add a `direction` column to every target annotation (`outside_to_inside` or `inside_to_outside`), then run separately with `--direction outside_to_inside` and `--direction inside_to_outside`. Use a 2.1 event export containing directions; older directionless rows are rejected for directional evaluation. By default silent-review candidates do not count as notifications. `--include-silent` evaluates all saved candidates instead; report that result separately. A silent true crossing otherwise counts as a missed notification. The `person_near_fence` kind can be evaluated against fully annotated dwell-event intervals.

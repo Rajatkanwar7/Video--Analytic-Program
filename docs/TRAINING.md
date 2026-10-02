@@ -91,3 +91,11 @@ Compare both models on the same unseen videos, zone settings and hardware. Recor
 With the custom model selected, **Require trained object class** can be enabled for an additional classification requirement. This may reduce unknown-motion alarms while increasing missed unfamiliar objects. Measure both settings before choosing. Generic COCO weights cannot enable this option. Bird/person evidence in a sampled frame still suppresses a crossing even when another frame matches the custom object class.
 
 Use **Live test mode** for controlled field trials before relying on a candidate operationally. More training cannot recover an object that the camera never resolved or frames the computer dropped. See [live testing](LIVE_TESTING.md).
+
+## Version 2.1: bidirectional and bird-focused acceptance
+
+Collect separate inward and outward throws, gliding/flapping birds at relevant distances, and people near the fence without throws. Include clips where birds and people appear together, plus missed/silently reviewed events. Split complete recording/camera/day groups between development and held-out evaluation; avoid adjacent-frame leakage. Train the existing `person`, `bird`, `thrown_object` classes with explicit human labels; motion candidates are not ground truth.
+
+Use a separate direction column (`outside_to_inside` or `inside_to_outside`) in event interval annotations when measuring each direction. Evaluate audible notifications separately from silent review candidates. Report recall, false alarms per hour, bird false-alarm rate and alert latency with sample counts on the actual server. Tune bird thresholds only on development data; increasing suppression can hide packages as well as birds. Review examples of both errors. Three positive throw clips alone cannot establish a reliable bird filter.
+
+No newly trained model or calibration of throwing probability is included in version 2.1. The fence-person association is a review-priority rule. See [perimeter decisions](PERIMETER_ANALYTICS.md).

@@ -33,3 +33,25 @@ class EvaluationTests(unittest.TestCase):
         result = evaluation.evaluate([], [(1, 2)])
         self.assertEqual(result["recall"], 0)
         self.assertIsNone(result["precision"])
+
+
+class EvaluationCLITests(unittest.TestCase):
+    def test_direction_and_silent_policy_are_separate_measurements(self):
+        import csv,json,tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from contextlib import redirect_stdout
+        import io
+        with tempfile.TemporaryDirectory() as root:
+            events=Path(root)/"events.csv"; labels=Path(root)/"labels.csv"; output=Path(root)/"report.json"
+            with events.open("w",newline="") as f:
+                writer=csv.writer(f); writer.writerow(["run_id","kind","source_time","direction","notify"])
+                writer.writerow(["test","suspected_throw",1.5,"outside_to_inside","True"])
+                writer.writerow(["test","suspected_throw",4.5,"inside_to_outside","False"])
+            labels.write_text("start_seconds,end_seconds,direction\n1,2,outside_to_inside\n4,5,inside_to_outside\n")
+            args=["evaluate","--events",str(events),"--labels",str(labels),"--run-id","test","--direction","inside_to_outside","--output",str(output)]
+            with patch("sys.argv",args),redirect_stdout(io.StringIO()): evaluation.main()
+            report=json.loads(output.read_text()); self.assertEqual(report["false_negatives"],1)
+            self.assertEqual(report["silent_candidates"],1); self.assertEqual(report["true_positives"],0)
+            with patch("sys.argv",args+["--include-silent"]),redirect_stdout(io.StringIO()): evaluation.main()
+            self.assertEqual(json.loads(output.read_text())["true_positives"],1)

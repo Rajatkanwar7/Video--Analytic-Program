@@ -2,6 +2,7 @@ import sqlite3
 import tempfile
 import unittest
 from dataclasses import replace
+from contextlib import closing
 from pathlib import Path
 
 from jailwatch.vms.auth import AuthStore, Session
@@ -24,7 +25,7 @@ class AuthTests(unittest.TestCase):
 
     def test_passwords_salted_and_not_stored_in_plaintext(self):
         self.auth.create_account(self.admin,'operator',PASSPHRASE)
-        with sqlite3.connect(self.auth.path) as db:
+        with closing(sqlite3.connect(self.auth.path)) as db:
             rows=db.execute('SELECT salt,digest,iterations FROM users ORDER BY name').fetchall()
         self.assertNotEqual(rows[0][0],rows[1][0]); self.assertNotEqual(rows[0][1],rows[1][1])
         self.assertGreaterEqual(rows[0][2],600000)
